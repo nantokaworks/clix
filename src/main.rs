@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod git;
+mod update;
 
 use std::env;
 use std::io::{self, Write};
@@ -71,6 +72,16 @@ fn print_ghx_banner() -> Result<(), error::Error> {
         if !info.users.is_empty() {
             writeln!(stdout, "{b} {} {}", "accounts:".dimmed(), info.users.join(", ").yellow()).map_err(w)?;
         }
+    }
+    if let Some(info) = update::check_for_update() {
+        writeln!(stdout, "{b}").map_err(w)?;
+        writeln!(
+            stdout, "{b} {} {} → {}",
+            "update available:".yellow().bold(),
+            env!("CARGO_PKG_VERSION").dimmed(),
+            info.latest.green().bold()
+        ).map_err(w)?;
+        writeln!(stdout, "{b} {}", info.upgrade_cmd.cyan()).map_err(w)?;
     }
     writeln!(stdout, "{}", "└──────────────────────────────".dimmed()).map_err(w)?;
     stdout.flush().map_err(w)

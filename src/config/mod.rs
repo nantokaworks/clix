@@ -110,13 +110,22 @@ fn resolve_gh_user_inner(owner: &str, allow_prompt: bool) -> Result<String, Erro
         return Ok(member);
     }
 
-    if allow_prompt && users.len() > 1 && atty::is(atty::Stream::Stdin) {
+    if let Some(active_user) = github.user.clone() {
+        return Ok(active_user);
+    }
+
+    if should_prompt_for_account_selection(
+        allow_prompt,
+        users.len(),
+        false,
+        atty::is(atty::Stream::Stdin),
+    ) {
         let selected = prompt_select_user(owner, &users)?;
         save_account_mapping(owner, &selected);
         return Ok(selected);
     }
 
-    github.user.clone().ok_or(Error::UnknownOwner {
+    Err(Error::UnknownOwner {
         owner: owner.to_string(),
         known: users,
     })
@@ -230,6 +239,15 @@ fn save_account_mapping(owner: &str, user: &str) {
     if let Ok(yaml) = serde_yml::to_string(&config) {
         let _ = fs::write(&path, yaml);
     }
+}
+
+fn should_prompt_for_account_selection(
+    allow_prompt: bool,
+    users_len: usize,
+    has_active_user: bool,
+    stdin_is_tty: bool,
+) -> bool {
+    allow_prompt && users_len > 1 && !has_active_user && stdin_is_tty
 }
 
 /// 各ユーザーのトークンで GitHub API を叩き、owner (org) のメンバーかどうかを確認する

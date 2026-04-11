@@ -3,7 +3,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use tempfile::TempDir;
 
-use super::{resolve_gh_user, resolve_gh_user_for_display};
+use super::{resolve_gh_user, resolve_gh_user_for_display, should_prompt_for_account_selection};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -138,4 +138,14 @@ fn display_resolution_is_non_interactive() {
     let _dirs = setup_config_dir(HOSTS, None);
     let result = resolve_gh_user_for_display("unknown-org");
     assert_eq!(result.as_deref(), Some("alice"));
+}
+
+#[test]
+fn prompt_is_skipped_when_active_user_exists() {
+    assert!(!should_prompt_for_account_selection(true, 2, true, true));
+}
+
+#[test]
+fn prompt_is_allowed_only_without_active_user() {
+    assert!(should_prompt_for_account_selection(true, 2, false, true));
 }

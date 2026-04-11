@@ -100,10 +100,12 @@ task build
 
 ## Release
 
-GitHub Release is triggered by pushing a `v<version>` tag. `task release` runs the test suite, creates the tag, and pushes it to `origin`.
+GitHub Release is triggered by pushing a `v<version>` tag. `task release:main` fetches `origin/main`, reads the version from that branch's `Cargo.toml`, runs the test suite on a clean local `main` that matches `origin/main`, then creates and pushes the tag.
 
 ```bash
-task release VERSION=0.3.0
+git switch main
+git pull --ff-only origin main
+task release:main
 ```
 
 ## Usage

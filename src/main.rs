@@ -47,14 +47,20 @@ fn print_ghx_banner() -> Result<(), error::Error> {
     let w = |e: io::Error| error::Error::ExecFailed(e.to_string());
     let mut stdout = io::stdout().lock();
 
-    let border = "│".dimmed();
-    writeln!(stdout, "{} {} {}", "┌".dimmed(), "ghx".cyan().bold(), env!("CARGO_PKG_VERSION").dimmed()).map_err(w)?;
+    let b = "│".dimmed();
+    writeln!(stdout, "{}", "┌──────────────────────────────".dimmed()).map_err(w)?;
+    writeln!(stdout, "{b}  ██████  ██   ██ ██   ██").map_err(w)?;
+    writeln!(stdout, "{b} ██       ██   ██  ██ ██").map_err(w)?;
+    writeln!(stdout, "{b} ██  ███  ███████   ███").map_err(w)?;
+    writeln!(stdout, "{b} ██   ██  ██   ██  ██ ██").map_err(w)?;
+    writeln!(stdout, "{b}  ██████  ██   ██ ██   ██  {}", env!("CARGO_PKG_VERSION").dimmed()).map_err(w)?;
     if let Some(info) = config::get_account_info() {
+        writeln!(stdout, "{b}").map_err(w)?;
         if let Some(ref active) = info.active {
-            writeln!(stdout, "{border} {} {}", "active account:".dimmed(), active.green().bold()).map_err(w)?;
+            writeln!(stdout, "{b} {} {}", "active account:".dimmed(), active.green().bold()).map_err(w)?;
         }
         if !info.users.is_empty() {
-            writeln!(stdout, "{border} {} {}", "accounts:".dimmed(), info.users.join(", ").yellow()).map_err(w)?;
+            writeln!(stdout, "{b} {} {}", "accounts:".dimmed(), info.users.join(", ").yellow()).map_err(w)?;
         }
     }
     writeln!(stdout, "{}", "└──────────────────────────────".dimmed()).map_err(w)?;

@@ -1,0 +1,12 @@
+version: "3"
+
+tasks:
+  build:
+    desc: リリースビルド
+    cmds:
+      - cargo build --release
+
+  dev:
+    desc: 開発用ビルド＆実行 (引数はそのまま渡される)
+    cmds:
+      - cargo run -- {{.CLI_ARGS}}

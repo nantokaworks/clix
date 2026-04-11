@@ -10,6 +10,30 @@ The goal is simple: keep normal `gh` behavior, but automatically use the right a
 
 If you work across personal and organizational repositories, `gh` account switching can be tedious. `ghx` lets you stay on one shell command while selecting the account from repository context.
 
+## インストール
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew install ichi0g0y/tap/ghx
+```
+
+### シェルスクリプト (macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ichi0g0y/ghx/main/install.sh | sh
+```
+
+### Cargo (全プラットフォーム)
+
+```bash
+cargo install --git https://github.com/ichi0g0y/ghx
+```
+
+### バイナリダウンロード
+
+macOS / Linux / Windows 向けのビルド済みバイナリを [Releases](https://github.com/ichi0g0y/ghx/releases) ページからダウンロードできます。
+
 ## How It Works
 
 For repository-aware commands, `ghx` does the following:
@@ -33,7 +57,6 @@ For `ghx version` and `ghx --version`, `ghx` prints its own version first and th
 
 ## Requirements
 
-- Rust toolchain
 - [`gh`](https://cli.github.com/) installed and available on `PATH`
 - At least one authenticated GitHub account in `gh auth login`
 

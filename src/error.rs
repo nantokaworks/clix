@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
+#[derive(Debug)]
 pub enum Error {
     NoRemoteOrigin(String),
     UnparseableRemoteUrl(String),
@@ -16,6 +17,11 @@ pub enum Error {
     GhAuthFailed {
         user: String,
         msg: String,
+    },
+    MappedUserNotFound {
+        owner: String,
+        mapped_user: String,
+        known: Vec<String>,
     },
 }
 
@@ -42,7 +48,10 @@ impl fmt::Display for Error {
                 write!(f, "hosts.yml に github.com の設定がありません")
             }
             Error::UnknownOwner { owner, known } => {
-                write!(f, "owner \"{owner}\" に対応する gh ユーザーが見つかりません")?;
+                write!(
+                    f,
+                    "owner \"{owner}\" に対応する gh ユーザーが見つかりません"
+                )?;
                 if !known.is_empty() {
                     write!(f, "\n  登録済みユーザー: {}", known.join(", "))?;
                 }
@@ -59,6 +68,20 @@ impl fmt::Display for Error {
             }
             Error::GhAuthFailed { user, msg } => {
                 write!(f, "gh auth token -u {user} に失敗: {msg}")
+            }
+            Error::MappedUserNotFound {
+                owner,
+                mapped_user,
+                known,
+            } => {
+                write!(
+                    f,
+                    "ghx.yml で owner \"{owner}\" を \"{mapped_user}\" にマッピングしましたが、hosts.yml に存在しません"
+                )?;
+                if !known.is_empty() {
+                    write!(f, "\n  登録済みユーザー: {}", known.join(", "))?;
+                }
+                Ok(())
             }
         }
     }

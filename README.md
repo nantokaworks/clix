@@ -2,7 +2,7 @@
 
 `ghx` is a thin wrapper around [`gh`](https://cli.github.com/) for people who use multiple GitHub accounts locally.
 
-It looks at the current repository's `origin` remote, infers the GitHub owner, resolves the matching account from `gh`'s `hosts.yml`, fetches a token for that account via `gh auth token -u <user>`, and then runs `gh` with `GH_TOKEN` set for the selected user.
+It looks at the current repository's `origin` remote, infers the GitHub owner, resolves the matching account from `gh`'s `hosts.yml` and optional `ghx` mappings, fetches a token for that account via `gh auth token -u <user>`, and then runs `gh` with `GH_TOKEN` set for the selected user.
 
 The goal is simple: keep normal `gh` behavior, but automatically use the right account for the current repository whenever possible.
 
@@ -47,13 +47,15 @@ For repository-aware commands, `ghx` does the following:
    - `~/.config/gh`
 4. Loads `hosts.yml`
 5. Uses the owner if it matches a configured user under `github.com.users`
-6. Falls back to the active `github.com.user` if there is no direct match
-7. Runs `gh auth token -u <resolved-user>`
-8. Executes `gh` with `GH_TOKEN` set to that token
+6. Checks `~/.config/ghx/accounts.yml` for an explicit organization-to-account mapping
+7. Checks each configured user's GitHub organization membership via the API
+8. Falls back to the active `github.com.user` if there is no match
+9. Runs `gh auth token -u <resolved-user>`
+10. Executes `gh` with `GH_TOKEN` set to that token
 
 For bootstrap commands such as `help` and `auth ...`, `ghx` passes through directly so it does not block basic `gh` usage when a repository or config is unavailable.
 
-For `ghx version` and `ghx --version`, `ghx` prints its own version first and then forwards to `gh` so you can see both versions in one place.
+For `ghx version` and `ghx --version`, `ghx` prints its own banner and exits without forwarding to `gh`.
 
 ## Update Notifications
 
@@ -61,7 +63,7 @@ When you run `ghx` with no arguments or `ghx --version`, it checks for new relea
 
 ```
 │
-│ update available: 0.2.0 → 0.3.0
+│ update available: 0.3.0 → 0.3.1
 │ brew upgrade ghx
 ```
 
@@ -96,6 +98,14 @@ Or with the included task:
 task build
 ```
 
+## Release
+
+GitHub Release is triggered by pushing a `v<version>` tag. `task release` runs the test suite, creates the tag, and pushes it to `origin`.
+
+```bash
+task release VERSION=0.3.0
+```
+
 ## Usage
 
 Run `ghx` the same way you would run `gh`:
@@ -114,7 +124,7 @@ ghx auth status
 ghx auth login
 ```
 
-Version commands show both `ghx` and `gh`:
+Version commands print the `ghx` banner:
 
 ```bash
 ghx version
@@ -129,10 +139,26 @@ ghx --version
 - The remote is configured as `origin`
 - The owner can be parsed from either:
   - `git@github.com:owner/repo.git`
+  - `git@<ssh-host-alias>:owner/repo.git` when `ssh -G <ssh-host-alias>` resolves to `github.com`
   - `https://github.com/owner/repo.git`
   - `https://github.com/owner/repo`
 
-If the owner matches one of the entries under `github.com.users` in `hosts.yml`, that user is selected. Otherwise, the active `github.com.user` is used.
+If the owner matches one of the entries under `github.com.users` in `hosts.yml`, that user is selected. If the owner is an organization, `ghx` checks `~/.config/ghx/accounts.yml` first, then auto-detects membership via the GitHub API. If no match is found, the active `github.com.user` is used.
+
+## Organization Mapping
+
+When a repository is owned by a GitHub organization, `ghx` automatically detects which account is a member of that organization via the GitHub API.
+
+To skip the API call and explicitly map organizations to accounts, create `~/.config/ghx/accounts.yml`:
+
+```yaml
+# ~/.config/ghx/accounts.yml
+accounts:
+  my-org: my-username
+  another-org: another-username
+```
+
+Explicit mappings take priority over API auto-detection.
 
 ## Example
 
@@ -146,7 +172,7 @@ If your local `gh` config contains accounts for `alice` and `acme-inc`, then:
 - Only `origin` is inspected
 - Only GitHub remotes are supported
 - Owner resolution is based on the remote URL, not on deeper repository metadata
-- Account resolution is intentionally simple: exact user match first, then active user fallback
+- Organization auto-detection requires network access to the GitHub API
 
 ## Troubleshooting
 
@@ -160,13 +186,15 @@ ghx: gh not found
   https://cli.github.com/
 ```
 
-When `gh` is installed, version output includes both tools:
+When `gh` is installed, version output shows the `ghx` banner:
 
 ```bash
 $ ghx version
-ghx 0.2.0
-gh version 2.x.y
-...
+┌──────────────────────────────
+│ Multi-account GitHub CLI, powered by gh
+│ version: 0.3.0 (YYYY-MM-DD)
+│ https://github.com/ichi0g0y/ghx
+└──────────────────────────────
 ```
 
 If `gh` is installed but `hosts.yml` does not exist yet, `ghx` asks you to log in first:
@@ -182,7 +210,7 @@ ghx: gh config not found: ~/.config/gh/hosts.yml
 Run tests:
 
 ```bash
-cargo test
+task test
 ```
 
 Run in development mode:

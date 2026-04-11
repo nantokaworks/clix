@@ -62,25 +62,68 @@ fn print_ghx_banner() -> Result<(), error::Error> {
     writeln!(stdout, "{b}  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝").map_err(w)?;
     writeln!(stdout, "{b}").map_err(w)?;
     writeln!(stdout, "{b} {}", env!("CARGO_PKG_DESCRIPTION").dimmed()).map_err(w)?;
-    writeln!(stdout, "{b} {}", format!("version: {} ({})", env!("CARGO_PKG_VERSION"), env!("GHX_BUILD_DATE")).dimmed()).map_err(w)?;
+    writeln!(
+        stdout,
+        "{b} {}",
+        format!(
+            "version: {} ({})",
+            env!("CARGO_PKG_VERSION"),
+            env!("GHX_BUILD_DATE")
+        )
+        .dimmed()
+    )
+    .map_err(w)?;
     writeln!(stdout, "{b} {}", env!("CARGO_PKG_REPOSITORY").dimmed()).map_err(w)?;
     if let Some(info) = config::get_account_info() {
         writeln!(stdout, "{b}").map_err(w)?;
+        // 現在のリポジトリで実際に使われるアカウントを表示
+        if let Ok(owner) = git::get_remote_owner() {
+            if let Some(resolved) = config::resolve_gh_user_for_display(&owner) {
+                if resolved == owner {
+                    writeln!(
+                        stdout,
+                        "{b} {} {}",
+                        "using:".dimmed(),
+                        resolved.green().bold()
+                    )
+                    .map_err(w)?;
+                } else {
+                    writeln!(
+                        stdout,
+                        "{b} {} {} {}",
+                        "using:".dimmed(),
+                        resolved.green().bold(),
+                        format!("({owner})").dimmed()
+                    )
+                    .map_err(w)?;
+                }
+            } else {
+                writeln!(stdout, "{b} {} {}", "owner:".dimmed(), owner.yellow()).map_err(w)?;
+            }
+        }
         if let Some(ref active) = info.active {
-            writeln!(stdout, "{b} {} {}", "active account:".dimmed(), active.green().bold()).map_err(w)?;
+            writeln!(stdout, "{b} {} {}", "gh default:".dimmed(), active.yellow()).map_err(w)?;
         }
         if !info.users.is_empty() {
-            writeln!(stdout, "{b} {} {}", "accounts:".dimmed(), info.users.join(", ").yellow()).map_err(w)?;
+            writeln!(
+                stdout,
+                "{b} {} {}",
+                "accounts:".dimmed(),
+                info.users.join(", ").dimmed()
+            )
+            .map_err(w)?;
         }
     }
     if let Some(info) = update::check_for_update() {
         writeln!(stdout, "{b}").map_err(w)?;
         writeln!(
-            stdout, "{b} {} {} → {}",
+            stdout,
+            "{b} {} {} → {}",
             "update available:".yellow().bold(),
             env!("CARGO_PKG_VERSION").dimmed(),
             info.latest.green().bold()
-        ).map_err(w)?;
+        )
+        .map_err(w)?;
         writeln!(stdout, "{b} {}", info.upgrade_cmd.cyan()).map_err(w)?;
     }
     writeln!(stdout, "{}", "└──────────────────────────────".dimmed()).map_err(w)?;

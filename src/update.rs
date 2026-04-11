@@ -32,7 +32,10 @@ pub fn check_for_update() -> Option<UpdateInfo> {
 
     if is_newer(&latest, current) {
         let upgrade_cmd = detect_upgrade_command();
-        Some(UpdateInfo { latest, upgrade_cmd })
+        Some(UpdateInfo {
+            latest,
+            upgrade_cmd,
+        })
     } else {
         None
     }

@@ -6,7 +6,31 @@ tasks:
     cmds:
       - cargo build --release
 
+  test:
+    desc: テスト実行
+    cmds:
+      - cargo test
+
   dev:
     desc: 開発用ビルド＆実行 (引数はそのまま渡される)
     cmds:
       - cargo run -- {{.CLI_ARGS}}
+
+  release:
+    desc: GitHub Releases 用のタグを作成して push
+    requires:
+      vars:
+        - VERSION
+    preconditions:
+      - sh: test "$(git branch --show-current)" = "main"
+        msg: main ブランチで実行してください
+      - sh: test -z "$(git status --porcelain)"
+        msg: 作業ツリーをクリーンにしてください
+      - sh: '! git rev-parse -q --verify "refs/tags/v{{.VERSION}}" >/dev/null'
+        msg: ローカルに同名タグが既に存在します
+      - sh: '! git ls-remote --exit-code --tags origin "refs/tags/v{{.VERSION}}" >/dev/null 2>&1'
+        msg: リモートに同名タグが既に存在します
+    cmds:
+      - task: test
+      - git tag "v{{.VERSION}}"
+      - git push origin "v{{.VERSION}}"

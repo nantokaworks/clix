@@ -20,9 +20,15 @@ pub fn get_remote_owner() -> Result<String, Error> {
 
 /// SSH/HTTPS の remote URL から owner を抽出する
 fn parse_owner(url: &str) -> Option<String> {
-    // SSH: git@github.com:owner/repo.git
-    if let Some(path) = url.strip_prefix("git@github.com:") {
-        return path.split('/').next().map(|s| s.to_string());
+    // SSH: git@<host>:owner/repo.git
+    if let Some(rest) = url.strip_prefix("git@") {
+        if let Some(colon_pos) = rest.find(':') {
+            let host = &rest[..colon_pos];
+            if is_github_host(host) {
+                let path = &rest[colon_pos + 1..];
+                return path.split('/').next().map(|s| s.to_string());
+            }
+        }
     }
 
     // HTTPS: https://github.com/owner/repo.git
@@ -32,6 +38,23 @@ fn parse_owner(url: &str) -> Option<String> {
     }
 
     None
+}
+
+/// ホスト名が GitHub を指しているか判定する
+/// "github.com" はそのまま、それ以外は `ssh -G` で HostName を解決して確認する
+fn is_github_host(host: &str) -> bool {
+    if host == "github.com" {
+        return true;
+    }
+    // ssh -G <host> で実際の HostName を解決
+    let output = Command::new("ssh").args(["-G", host]).output();
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.lines().any(|line| line == "hostname github.com")
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -60,6 +83,12 @@ mod tests {
             parse_owner("https://github.com/myorg/myrepo"),
             Some("myorg".to_string())
         );
+    }
+
+    #[test]
+    fn non_github_ssh_host() {
+        // gitlab は ssh -G でも github.com にならないので None
+        assert_eq!(parse_owner("git@gitlab.com:foo/bar.git"), None);
     }
 
     #[test]

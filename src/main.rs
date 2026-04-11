@@ -13,7 +13,11 @@ fn run() -> Result<(), error::Error> {
     let mut cmd = Command::new("gh");
     cmd.args(&args);
 
-    if args.is_empty() || is_version_command(&args) {
+    if is_version_command(&args) {
+        return print_ghx_banner();
+    }
+
+    if args.is_empty() {
         print_ghx_banner()?;
         return exec_gh(cmd);
     }
@@ -49,11 +53,12 @@ fn print_ghx_banner() -> Result<(), error::Error> {
 
     let b = "│".dimmed();
     writeln!(stdout, "{}", "┌──────────────────────────────".dimmed()).map_err(w)?;
-    writeln!(stdout, "{b}  ██████  ██   ██ ██   ██").map_err(w)?;
-    writeln!(stdout, "{b} ██       ██   ██  ██ ██").map_err(w)?;
-    writeln!(stdout, "{b} ██  ███  ███████   ███").map_err(w)?;
-    writeln!(stdout, "{b} ██   ██  ██   ██  ██ ██").map_err(w)?;
-    writeln!(stdout, "{b}  ██████  ██   ██ ██   ██  {}", env!("CARGO_PKG_VERSION").dimmed()).map_err(w)?;
+    writeln!(stdout, "{b}  ██████╗ ██╗  ██╗██╗  ██╗").map_err(w)?;
+    writeln!(stdout, "{b} ██╔════╝ ██║  ██║╚██╗██╔╝").map_err(w)?;
+    writeln!(stdout, "{b} ██║  ███╗███████║ ╚███╔╝").map_err(w)?;
+    writeln!(stdout, "{b} ██║   ██║██╔══██║ ██╔██╗").map_err(w)?;
+    writeln!(stdout, "{b} ╚██████╔╝██║  ██║██╔╝ ██╗").map_err(w)?;
+    writeln!(stdout, "{b}  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  {}", env!("CARGO_PKG_VERSION").dimmed()).map_err(w)?;
     if let Some(info) = config::get_account_info() {
         writeln!(stdout, "{b}").map_err(w)?;
         if let Some(ref active) = info.active {
@@ -62,6 +67,8 @@ fn print_ghx_banner() -> Result<(), error::Error> {
         if !info.users.is_empty() {
             writeln!(stdout, "{b} {} {}", "accounts:".dimmed(), info.users.join(", ").yellow()).map_err(w)?;
         }
+        writeln!(stdout, "{b} {} {}", "repository:".dimmed(), env!("CARGO_PKG_REPOSITORY").dimmed()).map_err(w)?;
+        writeln!(stdout, "{b} {}", env!("CARGO_PKG_DESCRIPTION").dimmed()).map_err(w)?;
     }
     writeln!(stdout, "{}", "└──────────────────────────────".dimmed()).map_err(w)?;
     stdout.flush().map_err(w)

@@ -1,10 +1,13 @@
 mod config;
 mod error;
 mod git;
+mod update;
 
 use std::env;
 use std::io::{self, Write};
 use std::process::{self, Command};
+
+use colored::Colorize;
 
 fn run() -> Result<(), error::Error> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -12,7 +15,11 @@ fn run() -> Result<(), error::Error> {
     cmd.args(&args);
 
     if is_version_command(&args) {
-        print_ghx_version()?;
+        return print_ghx_banner();
+    }
+
+    if args.is_empty() {
+        print_ghx_banner()?;
         return exec_gh(cmd);
     }
 
@@ -35,20 +42,49 @@ fn is_version_command(args: &[String]) -> bool {
 
 fn should_passthrough(args: &[String]) -> bool {
     match args {
-        [] => true,
         [first, ..] if matches!(first.as_str(), "--help" | "-h" | "help") => true,
         [first, ..] if first == "auth" => true,
         _ => false,
     }
 }
 
-fn print_ghx_version() -> Result<(), error::Error> {
+fn print_ghx_banner() -> Result<(), error::Error> {
+    let w = |e: io::Error| error::Error::ExecFailed(e.to_string());
     let mut stdout = io::stdout().lock();
-    writeln!(stdout, "ghx {}", env!("CARGO_PKG_VERSION"))
-        .map_err(|e| error::Error::ExecFailed(e.to_string()))?;
-    stdout
-        .flush()
-        .map_err(|e| error::Error::ExecFailed(e.to_string()))
+
+    let b = "│".dimmed();
+    writeln!(stdout, "{}", "┌──────────────────────────────".dimmed()).map_err(w)?;
+    writeln!(stdout, "{b}  ██████╗ ██╗  ██╗██╗  ██╗").map_err(w)?;
+    writeln!(stdout, "{b} ██╔════╝ ██║  ██║╚██╗██╔╝").map_err(w)?;
+    writeln!(stdout, "{b} ██║  ███╗███████║ ╚███╔╝").map_err(w)?;
+    writeln!(stdout, "{b} ██║   ██║██╔══██║ ██╔██╗").map_err(w)?;
+    writeln!(stdout, "{b} ╚██████╔╝██║  ██║██╔╝ ██╗").map_err(w)?;
+    writeln!(stdout, "{b}  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝").map_err(w)?;
+    writeln!(stdout, "{b}").map_err(w)?;
+    writeln!(stdout, "{b} {}", env!("CARGO_PKG_DESCRIPTION").dimmed()).map_err(w)?;
+    writeln!(stdout, "{b} {}", format!("version: {} ({})", env!("CARGO_PKG_VERSION"), env!("GHX_BUILD_DATE")).dimmed()).map_err(w)?;
+    writeln!(stdout, "{b} {}", env!("CARGO_PKG_REPOSITORY").dimmed()).map_err(w)?;
+    if let Some(info) = config::get_account_info() {
+        writeln!(stdout, "{b}").map_err(w)?;
+        if let Some(ref active) = info.active {
+            writeln!(stdout, "{b} {} {}", "active account:".dimmed(), active.green().bold()).map_err(w)?;
+        }
+        if !info.users.is_empty() {
+            writeln!(stdout, "{b} {} {}", "accounts:".dimmed(), info.users.join(", ").yellow()).map_err(w)?;
+        }
+    }
+    if let Some(info) = update::check_for_update() {
+        writeln!(stdout, "{b}").map_err(w)?;
+        writeln!(
+            stdout, "{b} {} {} → {}",
+            "update available:".yellow().bold(),
+            env!("CARGO_PKG_VERSION").dimmed(),
+            info.latest.green().bold()
+        ).map_err(w)?;
+        writeln!(stdout, "{b} {}", info.upgrade_cmd.cyan()).map_err(w)?;
+    }
+    writeln!(stdout, "{}", "└──────────────────────────────".dimmed()).map_err(w)?;
+    stdout.flush().map_err(w)
 }
 
 /// Unix: exec でプロセスを置き換え（シグナル・stdout/stderr がそのまま透過）
@@ -88,8 +124,8 @@ mod tests {
     use super::{is_version_command, should_passthrough};
 
     #[test]
-    fn passthrough_without_args() {
-        assert!(should_passthrough(&[]));
+    fn no_args_is_not_passthrough() {
+        assert!(!should_passthrough(&[]));
     }
 
     #[test]

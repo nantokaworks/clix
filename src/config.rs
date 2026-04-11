@@ -69,6 +69,30 @@ pub fn resolve_gh_user(owner: &str) -> Result<String, Error> {
         .ok_or(Error::UnknownOwner { owner: owner.to_string(), known: users })
 }
 
+pub struct AccountInfo {
+    pub active: Option<String>,
+    pub users: Vec<String>,
+}
+
+/// hosts.yml からアカウント情報を取得する（ベストエフォート）
+pub fn get_account_info() -> Option<AccountInfo> {
+    let path = gh_config_dir().join("hosts.yml");
+    let content = fs::read_to_string(&path).ok()?;
+    let hosts: HostsFile = serde_yml::from_str(&content).ok()?;
+    let github = hosts.get("github.com")?;
+
+    let users: Vec<String> = github
+        .users
+        .as_ref()
+        .map(|u| u.keys().cloned().collect())
+        .unwrap_or_default();
+
+    Some(AccountInfo {
+        active: github.user.clone(),
+        users,
+    })
+}
+
 /// `gh auth token -u <user>` でトークンを取得する
 pub fn get_token(gh_user: &str) -> Result<String, Error> {
     let output = Command::new("gh")

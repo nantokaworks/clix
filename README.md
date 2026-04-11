@@ -10,7 +10,7 @@ The goal is simple: keep normal `gh` behavior, but automatically use the right a
 
 If you work across personal and organizational repositories, `gh` account switching can be tedious. `ghx` lets you stay on one shell command while selecting the account from repository context.
 
-## インストール
+## Installation
 
 ### Homebrew (macOS / Linux)
 
@@ -18,21 +18,21 @@ If you work across personal and organizational repositories, `gh` account switch
 brew install ichi0g0y/tap/ghx
 ```
 
-### シェルスクリプト (macOS / Linux)
+### Shell script (macOS / Linux)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ichi0g0y/ghx/main/install.sh | sh
 ```
 
-### Cargo (全プラットフォーム)
+### Cargo (all platforms)
 
 ```bash
 cargo install --git https://github.com/ichi0g0y/ghx
 ```
 
-### バイナリダウンロード
+### Binary download
 
-macOS / Linux / Windows 向けのビルド済みバイナリを [Releases](https://github.com/ichi0g0y/ghx/releases) ページからダウンロードできます。
+Pre-built binaries for macOS, Linux, and Windows are available on the [Releases](https://github.com/ichi0g0y/ghx/releases) page.
 
 ## How It Works
 
@@ -54,6 +54,30 @@ For repository-aware commands, `ghx` does the following:
 For bootstrap commands such as `help` and `auth ...`, `ghx` passes through directly so it does not block basic `gh` usage when a repository or config is unavailable.
 
 For `ghx version` and `ghx --version`, `ghx` prints its own version first and then forwards to `gh` so you can see both versions in one place.
+
+## Update Notifications
+
+When you run `ghx` with no arguments or `ghx --version`, it checks for new releases via the GitHub API (at most once every 24 hours). If a newer version is available, the banner displays an upgrade notice with the appropriate command for your installation method:
+
+```
+│
+│ update available: 0.2.0 → 0.3.0
+│ brew upgrade ghx
+```
+
+The upgrade command is detected automatically:
+
+| Installation method | Upgrade command |
+|---|---|
+| Homebrew | `brew upgrade ghx` |
+| Cargo | `cargo install --git https://github.com/ichi0g0y/ghx` |
+| Other | Link to the releases page |
+
+To disable the update check, set the environment variable:
+
+```bash
+export GHX_NO_UPDATE_CHECK=1
+```
 
 ## Requirements
 
@@ -126,13 +150,13 @@ If your local `gh` config contains accounts for `alice` and `acme-inc`, then:
 
 ## Troubleshooting
 
-If `gh` is not installed or not available on `PATH`, `ghx` prints a direct message with the next commands to run:
+If `gh` is not installed or not available on `PATH`, `ghx` prints a message with next steps:
 
 ```bash
 $ ghx pr status
-ghx: gh が見つかりません
-  確認: gh --version
-  インストール後に次を実行してください: gh auth login
+ghx: gh not found
+  Check: gh --version
+  After installing, run: gh auth login
   https://cli.github.com/
 ```
 
@@ -140,17 +164,17 @@ When `gh` is installed, version output includes both tools:
 
 ```bash
 $ ghx version
-ghx 0.1.0
+ghx 0.2.0
 gh version 2.x.y
 ...
 ```
 
-If `gh` is installed but `hosts.yml` does not exist yet, `ghx` asks you to log in with `gh` first:
+If `gh` is installed but `hosts.yml` does not exist yet, `ghx` asks you to log in first:
 
 ```bash
 $ ghx pr status
-ghx: gh の設定が見つかりません: ~/.config/gh/hosts.yml
-  次を実行してください: gh auth login
+ghx: gh config not found: ~/.config/gh/hosts.yml
+  Run: gh auth login
 ```
 
 ## Development

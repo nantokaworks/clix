@@ -22,7 +22,7 @@ tasks:
       VERSION:
         sh: git fetch origin main >/dev/null 2>&1 && git show FETCH_HEAD:Cargo.toml | grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/'
     preconditions:
-      - sh: '! git ls-remote --exit-code --tags origin "refs/tags/v{{.VERSION}}" >/dev/null 2>&1'
+      - sh: 'test -z "$(git ls-remote --tags origin refs/tags/v{{.VERSION}} 2>/dev/null)"'
         msg: リモートに同名タグが既に存在します
     cmds:
       - |

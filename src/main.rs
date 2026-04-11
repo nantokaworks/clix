@@ -58,7 +58,11 @@ fn print_ghx_banner() -> Result<(), error::Error> {
     writeln!(stdout, "{b} ██║  ███╗███████║ ╚███╔╝").map_err(w)?;
     writeln!(stdout, "{b} ██║   ██║██╔══██║ ██╔██╗").map_err(w)?;
     writeln!(stdout, "{b} ╚██████╔╝██║  ██║██╔╝ ██╗").map_err(w)?;
-    writeln!(stdout, "{b}  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  {}", env!("CARGO_PKG_VERSION").dimmed()).map_err(w)?;
+    writeln!(stdout, "{b}  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝").map_err(w)?;
+    writeln!(stdout, "{b}").map_err(w)?;
+    writeln!(stdout, "{b} {}", env!("CARGO_PKG_DESCRIPTION").dimmed()).map_err(w)?;
+    writeln!(stdout, "{b} {}", format!("version: {} ({})", env!("CARGO_PKG_VERSION"), env!("GHX_BUILD_DATE")).dimmed()).map_err(w)?;
+    writeln!(stdout, "{b} {}", env!("CARGO_PKG_REPOSITORY").dimmed()).map_err(w)?;
     if let Some(info) = config::get_account_info() {
         writeln!(stdout, "{b}").map_err(w)?;
         if let Some(ref active) = info.active {
@@ -67,8 +71,6 @@ fn print_ghx_banner() -> Result<(), error::Error> {
         if !info.users.is_empty() {
             writeln!(stdout, "{b} {} {}", "accounts:".dimmed(), info.users.join(", ").yellow()).map_err(w)?;
         }
-        writeln!(stdout, "{b} {} {}", "repository:".dimmed(), env!("CARGO_PKG_REPOSITORY").dimmed()).map_err(w)?;
-        writeln!(stdout, "{b} {}", env!("CARGO_PKG_DESCRIPTION").dimmed()).map_err(w)?;
     }
     writeln!(stdout, "{}", "└──────────────────────────────".dimmed()).map_err(w)?;
     stdout.flush().map_err(w)

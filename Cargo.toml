@@ -1,6 +1,6 @@
 [package]
 name = "ghx"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A thin wrapper around gh for multi-account GitHub usage"
 license = "MIT"
@@ -11,3 +11,4 @@ readme = "README.md"
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
 dirs = "6"
+colored = "3"

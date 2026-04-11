@@ -16,21 +16,23 @@ tasks:
     cmds:
       - cargo run -- {{.CLI_ARGS}}
 
-  release:
-    desc: GitHub Releases 用のタグを作成して push
-    requires:
-      vars:
-        - VERSION
+  release:main:
+    desc: main の HEAD にリリースタグを作成して push
+    vars:
+      VERSION:
+        sh: git fetch origin main >/dev/null 2>&1 && git show FETCH_HEAD:Cargo.toml | grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/'
     preconditions:
       - sh: test "$(git branch --show-current)" = "main"
         msg: main ブランチで実行してください
       - sh: test -z "$(git status --porcelain)"
         msg: 作業ツリーをクリーンにしてください
+      - sh: git fetch origin main >/dev/null 2>&1 && test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
+        msg: origin/main と一致した main ブランチで実行してください
       - sh: '! git rev-parse -q --verify "refs/tags/v{{.VERSION}}" >/dev/null'
         msg: ローカルに同名タグが既に存在します
       - sh: '! git ls-remote --exit-code --tags origin "refs/tags/v{{.VERSION}}" >/dev/null 2>&1'
         msg: リモートに同名タグが既に存在します
     cmds:
       - task: test
-      - git tag "v{{.VERSION}}"
+      - git tag "v{{.VERSION}}" origin/main
       - git push origin "v{{.VERSION}}"

@@ -1,14 +1,20 @@
 # ghx
 
-`ghx` is a thin wrapper around [`gh`](https://cli.github.com/) for people who use multiple GitHub accounts locally.
+[![CI](https://github.com/ichi0g0y/ghx/actions/workflows/ci.yml/badge.svg)](https://github.com/ichi0g0y/ghx/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ichi0g0y/ghx)](https://github.com/ichi0g0y/ghx/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-It looks at the current repository's `origin` remote, infers the GitHub owner, resolves the matching account from `gh`'s `hosts.yml` and optional `ghx` mappings, fetches a token for that account via `gh auth token -u <user>`, and then runs `gh` with `GH_TOKEN` set for the selected user.
+**Automatically switch `gh` accounts based on the directory you're in.**
 
-The goal is simple: keep normal `gh` behavior, but automatically use the right account for the current repository whenever possible.
+![demo](.github/demo.gif)
+
+> **Prerequisite:** `ghx` is a wrapper around [`gh`](https://cli.github.com/). Log in to each account with `gh auth login` beforehand — `ghx` uses the tokens `gh` already manages.
+
+If you juggle multiple GitHub accounts (personal, work, client orgs) and are tired of running `gh auth switch` every time you `cd` into a different repo, `ghx` is for you. It detects the repository owner from the `origin` remote, resolves the right account, and runs `gh` with the correct token — no manual switching required.
 
 ## Why
 
-If you work across personal and organizational repositories, `gh` account switching can be tedious. `ghx` lets you stay on one shell command while selecting the account from repository context.
+`gh` only has one active account at a time. When you work across personal and organizational repositories, you have to remember which account is active and switch manually. `ghx` eliminates that friction: just use `ghx` instead of `gh` and it picks the right account automatically.
 
 ## Installation
 
@@ -62,7 +68,6 @@ For `ghx version` and `ghx --version`, `ghx` prints its own banner and exits wit
 When you run `ghx` with no arguments or `ghx --version`, it checks for new releases via the GitHub API (at most once every 24 hours). If a newer version is available, the banner displays an upgrade notice with the appropriate command for your installation method:
 
 ```
-│
 │ update available: 0.3.0 → 0.3.1
 │ brew upgrade ghx
 ```
@@ -186,14 +191,25 @@ ghx: gh not found
   https://cli.github.com/
 ```
 
-When `gh` is installed, version output shows the `ghx` banner:
+When `gh` is installed, version output shows the `ghx` banner with account info:
 
 ```bash
 $ ghx version
 ┌──────────────────────────────
+│  ██████╗ ██╗  ██╗██╗  ██╗
+│ ██╔════╝ ██║  ██║╚██╗██╔╝
+│ ██║  ███╗███████║ ╚███╔╝
+│ ██║   ██║██╔══██║ ██╔██╗
+│ ╚██████╔╝██║  ██║██╔╝ ██╗
+│  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
+│
 │ Multi-account GitHub CLI, powered by gh
-│ version: 0.3.0 (YYYY-MM-DD)
+│ version: 0.3.1 (2026-04-12)
 │ https://github.com/ichi0g0y/ghx
+│
+│ using: alice
+│ gh default: alice
+│ accounts: alice, bob
 └──────────────────────────────
 ```
 

@@ -139,14 +139,17 @@ jobs:
           BASE_URL="https://github.com/nantokaworks/clix/releases/download/${TAG}"
 
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/nantokaworks/homebrew-tap.git" homebrew-tap
-          mkdir -p homebrew-tap/Formula
+          cd homebrew-tap
+
+          BRANCH="ghx-${VERSION}"
+          git checkout -b "$BRANCH"
+          mkdir -p Formula
 
           printf '%s\n' \
             'class Ghx < Formula' \
-            '  desc "A thin wrapper around gh for multi-account GitHub usage"' \
+            '  desc "Thin wrapper around gh for multi-account GitHub usage"' \
             '  homepage "https://github.com/nantokaworks/clix"' \
             '  license "MIT"' \
-            "  version \"${VERSION}\"" \
             '' \
             '  livecheck do' \
             '    url :stable' \
@@ -182,10 +185,28 @@ jobs:
             '  test do' \
             '    assert_match version.to_s, shell_output("#{bin}/ghx version 2>&1")' \
             '  end' \
-            'end' > homebrew-tap/Formula/ghx.rb
+            'end' > Formula/ghx.rb
 
-          cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/ghx.rb
-          git diff --cached --quiet || (git commit -m "ghx ${VERSION}" && git push)
+          if git diff --cached --quiet; then
+            echo "No formula changes"
+            exit 0
+          fi
+
+          git commit -m "ghx ${VERSION}"
+          git push -u origin "$BRANCH"
+
+          GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh pr create \
+            --repo nantokaworks/homebrew-tap \
+            --base main \
+            --head "$BRANCH" \
+            --title "ghx ${VERSION}" \
+            --body "Automated update from clix release ${TAG}"
+
+          GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh pr merge "$BRANCH" \
+            --repo nantokaworks/homebrew-tap \
+            --auto \
+            --squash \
+            --delete-branch

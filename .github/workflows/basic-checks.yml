@@ -7,4 +7,4 @@ on:
 
 jobs:
   validate:
-    uses: ichi0g0y/.github/.github/workflows/basic-checks.yml@main
+    uses: nantokaworks/.github/.github/workflows/basic-checks.yml@main

@@ -136,15 +136,15 @@ jobs:
           SHA_LINUX_ARM: ${{ steps.sha.outputs.sha_linux_arm }}
           SHA_LINUX_X86: ${{ steps.sha.outputs.sha_linux_x86 }}
         run: |
-          BASE_URL="https://github.com/ichi0g0y/clix/releases/download/${TAG}"
+          BASE_URL="https://github.com/nantokaworks/clix/releases/download/${TAG}"
 
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/ichi0g0y/homebrew-tap.git" homebrew-tap
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/nantokaworks/homebrew-tap.git" homebrew-tap
           mkdir -p homebrew-tap/Formula
 
           printf '%s\n' \
             'class Ghx < Formula' \
             '  desc "A thin wrapper around gh for multi-account GitHub usage"' \
-            '  homepage "https://github.com/ichi0g0y/clix"' \
+            '  homepage "https://github.com/nantokaworks/clix"' \
             '  license "MIT"' \
             "  version \"${VERSION}\"" \
             '' \

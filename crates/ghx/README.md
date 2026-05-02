@@ -1,7 +1,7 @@
 # ghx
 
-[![CI](https://github.com/ichi0g0y/clix/actions/workflows/ci.yml/badge.svg)](https://github.com/ichi0g0y/clix/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/ichi0g0y/clix?filter=ghx-*&label=ghx)](https://github.com/ichi0g0y/clix/releases?q=ghx-)
+[![CI](https://github.com/nantokaworks/clix/actions/workflows/ci.yml/badge.svg)](https://github.com/nantokaworks/clix/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/nantokaworks/clix?filter=ghx-*&label=ghx)](https://github.com/nantokaworks/clix/releases?q=ghx-)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Automatically switch `gh` accounts based on the directory you're in.**
@@ -21,24 +21,24 @@ If you juggle multiple GitHub accounts (personal, work, client orgs) and are tir
 ### Homebrew (macOS / Linux)
 
 ```bash
-brew install ichi0g0y/tap/ghx
+brew install nantokaworks/tap/ghx
 ```
 
 ### Shell script (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ichi0g0y/clix/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/nantokaworks/clix/main/install.sh | sh
 ```
 
 ### Cargo (all platforms)
 
 ```bash
-cargo install --git https://github.com/ichi0g0y/clix ghx
+cargo install --git https://github.com/nantokaworks/clix ghx
 ```
 
 ### Binary download
 
-Pre-built binaries for macOS, Linux, and Windows are available on the [Releases](https://github.com/ichi0g0y/clix/releases) page.
+Pre-built binaries for macOS, Linux, and Windows are available on the [Releases](https://github.com/nantokaworks/clix/releases) page.
 
 ## How It Works
 
@@ -77,7 +77,7 @@ The upgrade command is detected automatically:
 | Installation method | Upgrade command |
 |---|---|
 | Homebrew | `brew upgrade ghx` |
-| Cargo | `cargo install --git https://github.com/ichi0g0y/clix ghx` |
+| Cargo | `cargo install --git https://github.com/nantokaworks/clix ghx` |
 | Other | Link to the releases page |
 
 To disable the update check, set the environment variable:
@@ -205,7 +205,7 @@ $ ghx version
 │
 │ Multi-account GitHub CLI, powered by gh
 │ version: 0.4.0 (2026-05-02)
-│ https://github.com/ichi0g0y/clix
+│ https://github.com/nantokaworks/clix
 │
 │ using: alice
 │ gh default: alice

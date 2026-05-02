@@ -1,6 +1,6 @@
 # clix
 
-[![CI](https://github.com/ichi0g0y/clix/actions/workflows/ci.yml/badge.svg)](https://github.com/ichi0g0y/clix/actions/workflows/ci.yml)
+[![CI](https://github.com/nantokaworks/clix/actions/workflows/ci.yml/badge.svg)](https://github.com/nantokaworks/clix/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **The clix toolkit — directory-aware account switchers for popular dev CLIs.**
@@ -64,7 +64,7 @@ Each member tool has its own install instructions in its directory:
 - [`crates/ghx/README.md`](crates/ghx/README.md)
 - [`crates/wranglerx/README.md`](crates/wranglerx/README.md)
 
-The `brew install ichi0g0y/tap/<tool>` formulae and the `cargo install --git` paths are tool-specific.
+The `brew install nantokaworks/tap/<tool>` formulae and the `cargo install --git` paths are tool-specific.
 
 ## Build
 

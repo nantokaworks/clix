@@ -98,7 +98,7 @@ fn print_ghx_banner() -> Result<(), error::Error> {
     }
 
     let update_request = update::CheckRequest {
-        repo_slug: "ichi0g0y/clix",
+        repo_slug: "nantokaworks/clix",
         tool_name: "ghx",
         current_version: env!("CARGO_PKG_VERSION"),
         disable_env_var: "GHX_NO_UPDATE_CHECK",

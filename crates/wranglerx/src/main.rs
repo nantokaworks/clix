@@ -148,7 +148,7 @@ fn print_wranglerx_banner() -> Result<(), error::Error> {
     }
 
     let update_request = update::CheckRequest {
-        repo_slug: "ichi0g0y/clix",
+        repo_slug: "nantokaworks/clix",
         tool_name: "wranglerx",
         current_version: env!("CARGO_PKG_VERSION"),
         disable_env_var: "WRANGLERX_NO_UPDATE_CHECK",

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/core",
     "crates/ghx",
+    "crates/wranglerx",
 ]
 
 [workspace.package]
@@ -20,3 +21,5 @@ atty = "0.2"
 ureq = { version = "3", features = ["json"] }
 tempfile = "3"
 time = "0.3"
+toml = "0.8.23"
+jsonc-parser = { version = "0.32.3", features = ["serde"] }

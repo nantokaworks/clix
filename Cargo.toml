@@ -9,7 +9,7 @@ members = [
 [workspace.package]
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/ichi0g0y/clix"
+repository = "https://github.com/nantokaworks/clix"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

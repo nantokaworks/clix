@@ -1,7 +1,7 @@
 # wranglerx
 
-[![CI](https://github.com/ichi0g0y/clix/actions/workflows/ci.yml/badge.svg)](https://github.com/ichi0g0y/clix/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/ichi0g0y/clix?filter=wranglerx-*&label=wranglerx)](https://github.com/ichi0g0y/clix/releases?q=wranglerx-)
+[![CI](https://github.com/nantokaworks/clix/actions/workflows/ci.yml/badge.svg)](https://github.com/nantokaworks/clix/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/nantokaworks/clix?filter=wranglerx-*&label=wranglerx)](https://github.com/nantokaworks/clix/releases?q=wranglerx-)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Automatically switch Cloudflare Wrangler accounts based on the directory you're in.**
@@ -15,18 +15,18 @@ If you work across personal, work, or client Cloudflare accounts, `wranglerx` le
 ### Homebrew (macOS / Linux)
 
 ```bash
-brew install ichi0g0y/tap/wranglerx
+brew install nantokaworks/tap/wranglerx
 ```
 
 ### Cargo (all platforms)
 
 ```bash
-cargo install --git https://github.com/ichi0g0y/clix wranglerx
+cargo install --git https://github.com/nantokaworks/clix wranglerx
 ```
 
 ### Binary download
 
-Pre-built binaries for macOS, Linux, and Windows are available on the [Releases](https://github.com/ichi0g0y/clix/releases) page.
+Pre-built binaries for macOS, Linux, and Windows are available on the [Releases](https://github.com/nantokaworks/clix/releases) page.
 
 ## Usage
 

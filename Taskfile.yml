@@ -2,27 +2,27 @@ version: "3"
 
 tasks:
   build:
-    desc: リリースビルド
+    desc: ワークスペース全体のリリースビルド
     cmds:
-      - cargo build --release
+      - cargo build --release --workspace
 
   test:
-    desc: テスト実行
+    desc: ワークスペース全体のテスト実行
     cmds:
-      - cargo test
+      - cargo test --workspace
 
-  dev:
-    desc: 開発用ビルド＆実行 (引数はそのまま渡される)
+  dev:ghx:
+    desc: ghx の開発用ビルド＆実行 (引数はそのまま渡される)
     cmds:
-      - cargo run -- {{.CLI_ARGS}}
+      - cargo run -p ghx -- {{.CLI_ARGS}}
 
-  release:main:
-    desc: origin/main を検証してリリースタグを作成して push
+  release:ghx:
+    desc: origin/main を検証して ghx-v$VERSION タグを作成して push
     vars:
       VERSION:
-        sh: git fetch origin main >/dev/null 2>&1 && git show FETCH_HEAD:Cargo.toml | grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/'
+        sh: git fetch origin main >/dev/null 2>&1 && git show FETCH_HEAD:crates/ghx/Cargo.toml | grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/'
     preconditions:
-      - sh: 'test -z "$(git ls-remote --tags origin refs/tags/v{{.VERSION}} 2>/dev/null)"'
+      - sh: 'test -z "$(git ls-remote --tags origin refs/tags/ghx-v{{.VERSION}} 2>/dev/null)"'
         msg: リモートに同名タグが既に存在します
     cmds:
       - |
@@ -38,7 +38,7 @@ tasks:
         git worktree add --detach "$tmpdir" origin/main >/dev/null
         (
           cd "$tmpdir"
-          cargo test
+          cargo test -p ghx
         )
-        git tag -f "v{{.VERSION}}" origin/main
-        git push origin "v{{.VERSION}}"
+        git tag -f "ghx-v{{.VERSION}}" origin/main
+        git push origin "ghx-v{{.VERSION}}"

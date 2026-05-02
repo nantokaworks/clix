@@ -1,0 +1,10 @@
+name: Basic Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  validate:
+    uses: ichi0g0y/.github/.github/workflows/basic-checks.yml@main

@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use clix_core::git::GitError;
+
 #[derive(Debug)]
 pub enum Error {
     NoRemoteOrigin(String),
@@ -83,6 +85,15 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+        }
+    }
+}
+
+impl From<GitError> for Error {
+    fn from(e: GitError) -> Self {
+        match e {
+            GitError::NoRemoteOrigin(msg) => Error::NoRemoteOrigin(msg),
+            GitError::UnparseableRemoteUrl(url) => Error::UnparseableRemoteUrl(url),
         }
     }
 }

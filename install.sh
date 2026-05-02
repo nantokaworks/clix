@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
 
-REPO="ichi0g0y/ghx"
+REPO="ichi0g0y/clix"
 BINARY="ghx"
+TAG_PREFIX="ghx-v"
 
 main() {
   os=$(uname -s)
@@ -29,15 +30,17 @@ main() {
 
   target="${arch_target}-${os_target}"
 
-  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')
+  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=30" \
+    | grep "\"tag_name\": *\"${TAG_PREFIX}" | head -1 \
+    | sed 's/.*"tag_name": *"//;s/".*//')
 
   if [ -z "$tag" ]; then
-    echo "error: failed to fetch latest release" >&2
+    echo "error: failed to fetch latest ${BINARY} release" >&2
     exit 1
   fi
 
-  archive="${BINARY}-${tag}-${target}.tar.gz"
+  version="${tag#${TAG_PREFIX}}"
+  archive="${BINARY}-v${version}-${target}.tar.gz"
   url="https://github.com/$REPO/releases/download/${tag}/${archive}"
 
   tmpdir=$(mktemp -d)

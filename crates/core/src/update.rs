@@ -20,29 +20,39 @@ pub struct UpdateInfo {
     pub upgrade_cmd: String,
 }
 
+/// Tool 単位のアップデートチェック設定
+pub struct CheckRequest<'a> {
+    /// "ichi0g0y/clix" のような owner/repo
+    pub repo_slug: &'a str,
+    /// "ghx" などの tool 名。tag prefix（`ghx-v`）と cache dir 名、brew/cargo upgrade コマンドに使う
+    pub tool_name: &'a str,
+    /// 比較対象の現在バージョン（"0.4.0" 等）
+    pub current_version: &'a str,
+    /// "1" がセットされていればチェックをスキップする env var の名前
+    pub disable_env_var: &'a str,
+}
+
 /// アップデートが利用可能なら `Some(UpdateInfo)` を返す。
 /// エラーは全て握りつぶす（通知は advisory）。
-pub fn check_for_update() -> Option<UpdateInfo> {
-    if env::var("GHX_NO_UPDATE_CHECK").ok().as_deref() == Some("1") {
+pub fn check_for_update(req: &CheckRequest<'_>) -> Option<UpdateInfo> {
+    if env::var(req.disable_env_var).ok().as_deref() == Some("1") {
         return None;
     }
 
-    let current = env!("CARGO_PKG_VERSION");
-    let latest = get_latest_version()?;
-
-    if is_newer(&latest, current) {
-        let upgrade_cmd = detect_upgrade_command();
-        Some(UpdateInfo {
-            latest,
-            upgrade_cmd,
-        })
-    } else {
-        None
+    let latest = get_latest_version(req)?;
+    if !is_newer(&latest, req.current_version) {
+        return None;
     }
+
+    let upgrade_cmd = detect_upgrade_command(req.tool_name, req.repo_slug);
+    Some(UpdateInfo {
+        latest,
+        upgrade_cmd,
+    })
 }
 
-fn get_latest_version() -> Option<String> {
-    let path = cache_path()?;
+fn get_latest_version(req: &CheckRequest<'_>) -> Option<String> {
+    let path = cache_path(req.tool_name)?;
 
     if let Some(cached) = read_cache(&path) {
         if now_epoch().saturating_sub(cached.checked_at) < 86400 {
@@ -57,29 +67,42 @@ fn get_latest_version() -> Option<String> {
             .build(),
     );
 
-    let release: GitHubRelease = agent
-        .get("https://api.github.com/repos/ichi0g0y/ghx/releases/latest")
+    let url = format!(
+        "https://api.github.com/repos/{}/releases?per_page=30",
+        req.repo_slug
+    );
+    let user_agent = format!("{}-update-check", req.tool_name);
+    let releases: Vec<GitHubRelease> = agent
+        .get(&url)
         .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "ghx-update-check")
+        .header("User-Agent", &user_agent)
         .call()
         .ok()?
         .body_mut()
         .read_json()
         .ok()?;
 
-    let version = release
-        .tag_name
-        .strip_prefix('v')
-        .unwrap_or(&release.tag_name)
-        .to_string();
+    let prefix = format!("{}-v", req.tool_name);
+    let mut highest: Option<String> = None;
+    for release in releases {
+        if let Some(version) = release.tag_name.strip_prefix(&prefix) {
+            match &highest {
+                None => highest = Some(version.to_string()),
+                Some(current) if is_newer(version, current) => {
+                    highest = Some(version.to_string())
+                }
+                _ => {}
+            }
+        }
+    }
 
+    let version = highest?;
     let _ = write_cache(&path, &version);
-
     Some(version)
 }
 
-fn cache_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("ghx").join("update-check.json"))
+fn cache_path(tool_name: &str) -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join(tool_name).join("update-check.json"))
 }
 
 fn read_cache(path: &Path) -> Option<UpdateCache> {
@@ -125,13 +148,14 @@ fn is_newer(latest: &str, current: &str) -> bool {
     }
 }
 
-fn detect_upgrade_command() -> String {
+fn detect_upgrade_command(tool_name: &str, repo_slug: &str) -> String {
+    let repo_url = format!("https://github.com/{repo_slug}");
     if is_homebrew() {
-        "brew upgrade ghx".to_string()
+        format!("brew upgrade {tool_name}")
     } else if is_cargo_install() {
-        "cargo install --git https://github.com/ichi0g0y/ghx".to_string()
+        format!("cargo install --git {repo_url} {tool_name}")
     } else {
-        "https://github.com/ichi0g0y/ghx/releases/latest".to_string()
+        format!("{repo_url}/releases/latest")
     }
 }
 

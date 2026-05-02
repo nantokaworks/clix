@@ -1,26 +1,45 @@
+use std::fmt;
 use std::process::Command;
 
-use crate::error::Error;
+#[derive(Debug)]
+pub enum GitError {
+    NoRemoteOrigin(String),
+    UnparseableRemoteUrl(String),
+}
 
-/// git remote get-url origin を実行し、owner を返す
-pub fn get_remote_owner() -> Result<String, Error> {
+impl fmt::Display for GitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GitError::NoRemoteOrigin(msg) => {
+                write!(f, "remote 'origin' が見つかりません: {msg}")
+            }
+            GitError::UnparseableRemoteUrl(url) => {
+                write!(f, "remote URL を解析できません: {url}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for GitError {}
+
+/// `git remote get-url origin` の owner を返す
+pub fn get_remote_owner() -> Result<String, GitError> {
     let output = Command::new("git")
         .args(["remote", "get-url", "origin"])
         .output()
-        .map_err(|e| Error::NoRemoteOrigin(e.to_string()))?;
+        .map_err(|e| GitError::NoRemoteOrigin(e.to_string()))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::NoRemoteOrigin(stderr.trim().to_string()));
+        return Err(GitError::NoRemoteOrigin(stderr.trim().to_string()));
     }
 
     let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    parse_owner(&url).ok_or(Error::UnparseableRemoteUrl(url))
+    parse_owner(&url).ok_or(GitError::UnparseableRemoteUrl(url))
 }
 
 /// SSH/HTTPS の remote URL から owner を抽出する
 fn parse_owner(url: &str) -> Option<String> {
-    // SSH: git@<host>:owner/repo.git
     if let Some(rest) = url.strip_prefix("git@") {
         if let Some(colon_pos) = rest.find(':') {
             let host = &rest[..colon_pos];
@@ -31,7 +50,6 @@ fn parse_owner(url: &str) -> Option<String> {
         }
     }
 
-    // HTTPS: https://github.com/owner/repo.git
     if url.contains("github.com/") {
         let after = url.split("github.com/").nth(1)?;
         return after.split('/').next().map(|s| s.to_string());
@@ -40,13 +58,11 @@ fn parse_owner(url: &str) -> Option<String> {
     None
 }
 
-/// ホスト名が GitHub を指しているか判定する
-/// "github.com" はそのまま、それ以外は `ssh -G` で HostName を解決して確認する
+/// "github.com" はそのまま、それ以外は `ssh -G` で HostName を解決して確認
 fn is_github_host(host: &str) -> bool {
     if host == "github.com" {
         return true;
     }
-    // ssh -G <host> で実際の HostName を解決
     let output = Command::new("ssh").args(["-G", host]).output();
     match output {
         Ok(out) if out.status.success() => {
@@ -87,7 +103,6 @@ mod tests {
 
     #[test]
     fn non_github_ssh_host() {
-        // gitlab は ssh -G でも github.com にならないので None
         assert_eq!(parse_owner("git@gitlab.com:foo/bar.git"), None);
     }
 

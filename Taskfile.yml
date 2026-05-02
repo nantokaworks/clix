@@ -16,6 +16,11 @@ tasks:
     cmds:
       - cargo run -p ghx -- {{.CLI_ARGS}}
 
+  dev:wranglerx:
+    desc: wranglerx の開発用ビルド＆実行 (引数はそのまま渡される)
+    cmds:
+      - cargo run -p wranglerx -- {{.CLI_ARGS}}
+
   release:ghx:
     desc: origin/main を検証して ghx-v$VERSION タグを作成して push
     vars:
@@ -42,3 +47,30 @@ tasks:
         )
         git tag -f "ghx-v{{.VERSION}}" origin/main
         git push origin "ghx-v{{.VERSION}}"
+
+  release:wranglerx:
+    desc: origin/main を検証して wranglerx-v$VERSION タグを作成して push
+    vars:
+      VERSION:
+        sh: git fetch origin main >/dev/null 2>&1 && git show FETCH_HEAD:crates/wranglerx/Cargo.toml | grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/'
+    preconditions:
+      - sh: 'test -z "$(git ls-remote --tags origin refs/tags/wranglerx-v{{.VERSION}} 2>/dev/null)"'
+        msg: リモートに同名タグが既に存在します
+    cmds:
+      - |
+        set -eu
+        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/wranglerx-release.XXXXXX")"
+        cleanup() {
+          git worktree remove --force "$tmpdir" >/dev/null 2>&1 || true
+          rm -rf "$tmpdir"
+        }
+        trap cleanup EXIT
+
+        git fetch origin main
+        git worktree add --detach "$tmpdir" origin/main >/dev/null
+        (
+          cd "$tmpdir"
+          cargo test -p wranglerx
+        )
+        git tag -f "wranglerx-v{{.VERSION}}" origin/main
+        git push origin "wranglerx-v{{.VERSION}}"

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="ichi0g0y/clix"
+REPO="nantokaworks/clix"
 BINARY="ghx"
 TAG_PREFIX="ghx-v"
 

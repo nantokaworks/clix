@@ -22,7 +22,7 @@ pub struct UpdateInfo {
 
 /// Tool 単位のアップデートチェック設定
 pub struct CheckRequest<'a> {
-    /// "ichi0g0y/clix" のような owner/repo
+    /// "nantokaworks/clix" のような owner/repo
     pub repo_slug: &'a str,
     /// "ghx" などの tool 名。tag prefix（`ghx-v`）と cache dir 名、brew/cargo upgrade コマンドに使う
     pub tool_name: &'a str,

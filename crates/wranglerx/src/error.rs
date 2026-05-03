@@ -11,11 +11,16 @@ pub enum Error {
     ConfigParseError { path: PathBuf, msg: String },
     ConfigWriteError { path: PathBuf, msg: String },
     WranglerConfigParseError { path: PathBuf, msg: String },
-    AccountNotFound { account: String },
-    MissingToken { account: String },
-    MissingEnvToken { account: String, var: String },
-    MissingAccountId { account: String },
+    LegacyAccountsConfig { path: PathBuf },
+    ProfileNotFound { profile: String },
+    NoDefaultProfile,
     UnknownTrigger { trigger: String, known: Vec<String> },
+    AmbiguousAccountId { profile: String, account_ids: Vec<String> },
+    MissingAccountId { profile: String },
+    WranglerCredentialsNotFound { searched: Vec<PathBuf> },
+    WranglerCredentialsParse { path: PathBuf, msg: String },
+    InvalidExpirationTime { value: String, msg: String },
+    OAuthRefreshFailed(String),
     CloudflareApiFailed(String),
     InvalidAuthCommand(String),
     WranglerNotFound,
@@ -37,30 +42,66 @@ impl fmt::Display for Error {
             Error::WranglerConfigParseError { path, msg } => {
                 write!(f, "failed to parse {}: {msg}", path.display())
             }
-            Error::AccountNotFound { account } => {
-                write!(f, "account \"{account}\" is not registered")
-            }
-            Error::MissingToken { account } => {
-                write!(f, "account \"{account}\" does not have an api_token")
-            }
-            Error::MissingEnvToken { account, var } => write!(
+            Error::LegacyAccountsConfig { path } => write!(
                 f,
-                "account \"{account}\" uses ${{{var}}}, but the environment variable is not set"
+                "legacy accounts.yml detected at {}; this format is no longer supported. \
+                 Run `wrangler login` and then `wranglerx auth save <profile>` to migrate.",
+                path.display()
             ),
-            Error::MissingAccountId { account } => write!(
+            Error::ProfileNotFound { profile } => {
+                write!(f, "profile \"{profile}\" is not registered")
+            }
+            Error::NoDefaultProfile => write!(
                 f,
-                "account \"{account}\" does not have an account_id; run: wranglerx auth add {account} <token> --account-id <id>"
+                "no profile could be resolved and no default is set; \
+                 register one with `wrangler login` + `wranglerx auth save <profile>`, \
+                 then optionally `wranglerx auth use <profile>`"
             ),
             Error::UnknownTrigger { trigger, known } => {
                 write!(
                     f,
-                    "no Cloudflare account found for \"{trigger}\"; run: wranglerx auth add <name> <token>"
+                    "no profile mapped to \"{trigger}\"; \
+                     run: `wranglerx auth bind <profile> --account-id {trigger}` (account id) \
+                     or `wranglerx auth use <profile>` (default fallback)"
                 )?;
                 if !known.is_empty() {
-                    write!(f, "\n  registered accounts: {}", known.join(", "))?;
+                    write!(f, "\n  registered profiles: {}", known.join(", "))?;
                 }
                 Ok(())
             }
+            Error::AmbiguousAccountId {
+                profile,
+                account_ids,
+            } => write!(
+                f,
+                "profile \"{profile}\" can access multiple accounts ({}); \
+                 bind one with `wranglerx auth bind {profile} --account-id <id>`",
+                account_ids.join(", ")
+            ),
+            Error::MissingAccountId { profile } => write!(
+                f,
+                "profile \"{profile}\" has no account_id; \
+                 run: `wranglerx auth bind {profile} --account-id <id>`"
+            ),
+            Error::WranglerCredentialsNotFound { searched } => {
+                write!(
+                    f,
+                    "wrangler credentials file not found; run `wrangler login` first"
+                )?;
+                for path in searched {
+                    write!(f, "\n  searched: {}", path.display())?;
+                }
+                Ok(())
+            }
+            Error::WranglerCredentialsParse { path, msg } => write!(
+                f,
+                "failed to parse wrangler credentials at {}: {msg}",
+                path.display()
+            ),
+            Error::InvalidExpirationTime { value, msg } => {
+                write!(f, "could not parse expiration_time \"{value}\": {msg}")
+            }
+            Error::OAuthRefreshFailed(msg) => write!(f, "OAuth refresh failed: {msg}"),
             Error::CloudflareApiFailed(msg) => {
                 write!(f, "Cloudflare API request failed: {msg}")
             }

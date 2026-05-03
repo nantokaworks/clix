@@ -2,6 +2,7 @@ mod auth_cmd;
 mod cloudflare_api;
 mod config;
 mod error;
+mod oauth;
 
 use std::env;
 use std::process::{self, Command};
@@ -13,7 +14,7 @@ use clix_core::update;
 use colored::Colorize;
 
 use config::wrangler_toml::{ProjectConfigKind, find_project_account_id};
-use config::{TriggerSource, token_source_label};
+use config::{TriggerSource, trigger_source_label};
 
 fn run() -> Result<(), error::Error> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -48,9 +49,9 @@ fn run() -> Result<(), error::Error> {
     }
 
     let (trigger, source) = resolve_trigger()?;
-    let account = config::resolve_account(&trigger, &source)?;
-    cmd.env("CLOUDFLARE_API_TOKEN", &account.token);
-    cmd.env("CLOUDFLARE_ACCOUNT_ID", &account.account_id);
+    let profile = config::resolve_profile(&trigger, &source)?;
+    cmd.env("CLOUDFLARE_API_TOKEN", &profile.access_token);
+    cmd.env("CLOUDFLARE_ACCOUNT_ID", &profile.account_id);
 
     run_wrangler(cmd)
 }
@@ -71,8 +72,10 @@ fn resolve_trigger() -> Result<(String, TriggerSource), error::Error> {
         return Ok((project.account_id, source));
     }
 
-    let owner = git::get_remote_owner()?;
-    Ok((owner, TriggerSource::GitRemote))
+    match git::get_remote_owner() {
+        Ok(owner) => Ok((owner, TriggerSource::GitRemote)),
+        Err(_) => Ok((String::new(), TriggerSource::Default)),
+    }
 }
 
 fn print_dry_run() -> Result<(), error::Error> {
@@ -85,24 +88,15 @@ fn print_dry_run() -> Result<(), error::Error> {
     }
 
     let (trigger, source) = resolve_trigger()?;
-    let account = config::resolve_account(&trigger, &source)?;
+    let profile = config::resolve_profile(&trigger, &source)?;
     eprintln!("wranglerx dry-run:");
-    eprintln!("  account: {}", account.name);
-    eprintln!("  account_id: {}", account.account_id);
+    eprintln!("  profile: {}", profile.name);
+    eprintln!("  account_id: {}", profile.account_id);
     eprintln!("  trigger source: {}", trigger_source_label(&source));
-    eprintln!(
-        "  token source: {}",
-        token_source_label(&account.token_source)
-    );
-    Ok(())
-}
-
-fn trigger_source_label(source: &TriggerSource) -> String {
-    match source {
-        TriggerSource::WranglerToml(path) => format!("wrangler.toml:{}", path.display()),
-        TriggerSource::WranglerJsonc(path) => format!("wrangler.jsonc:{}", path.display()),
-        TriggerSource::GitRemote => "git remote".to_string(),
+    if profile.refreshed {
+        eprintln!("  oauth: refreshed");
     }
+    Ok(())
 }
 
 fn is_version_command(args: &[String]) -> bool {
@@ -139,7 +133,16 @@ fn print_wranglerx_banner() -> Result<(), error::Error> {
             account_id.yellow()
         ));
     } else if let Ok((trigger, source)) = resolve_trigger() {
-        context_lines.push(format!("{} {}", "trigger:".dimmed(), trigger.yellow()));
+        let trigger_label = if trigger.is_empty() {
+            "(default)".to_string()
+        } else {
+            trigger
+        };
+        context_lines.push(format!(
+            "{} {}",
+            "trigger:".dimmed(),
+            trigger_label.yellow()
+        ));
         context_lines.push(format!(
             "{} {}",
             "source:".dimmed(),

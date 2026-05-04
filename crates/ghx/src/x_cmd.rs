@@ -12,6 +12,10 @@ const USAGE: &str = "usage: ghx x list\n\
 
 pub fn run(args: &[String]) -> Result<(), Error> {
     match args {
+        [] => {
+            println!("{USAGE}");
+            Ok(())
+        }
         [cmd] if cmd == "list" => list(),
         [cmd, user, owner] if cmd == "bind" => bind(user, owner),
         [cmd, owner] if cmd == "unbind" => unbind(owner),

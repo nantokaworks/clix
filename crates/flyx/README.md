@@ -5,11 +5,11 @@
 
 **Automatically switch Fly.io accounts based on the directory you're in.**
 
-> **Prerequisite:** `flyx` is a wrapper around [`fly`](https://fly.io/docs/flyctl/). Install flyctl first, sign in with `fly auth login` for each Fly.io account, and snapshot each session into a flyx profile with `flyx auth save <profile>`.
+> **Prerequisite:** `flyx` is a wrapper around [`fly`](https://fly.io/docs/flyctl/). Install flyctl first, sign in with `fly auth login` for each Fly.io account, and snapshot each session into a flyx profile with `flyx x save <profile>` (or just let auto-import pick up your existing `~/.fly/config*.yml` files on first run).
 
 If you work across personal, work, or client Fly.io organizations, `flyx` lets each project carry the account context. It snapshots the macaroon access token from `~/.fly/config.yml`, detects the `app` from `fly.toml`, looks up its owning organization through Fly's GraphQL API on first use (caching the result), and runs `fly` with the matching `FLY_API_TOKEN`.
 
-Unlike Cloudflare Wrangler, Fly.io does not use OAuth refresh tokens — its tokens are long-lived macaroons. When a token expires, run `fly auth login` again and re-snapshot with `flyx auth save <profile>`.
+Unlike Cloudflare Wrangler, Fly.io does not use OAuth refresh tokens — its tokens are long-lived macaroons. When a token expires, run `fly auth login` again and re-snapshot with `flyx x save <profile>`.
 
 ## Usage
 
@@ -28,8 +28,9 @@ flyx help
 flyx auth login
 flyx auth logout
 flyx auth signup
-flyx auth docker
 ```
+
+Other `fly auth ...` subcommands (`docker`, `whoami`) flow through normal token injection so they operate against the resolved profile.
 
 Version commands print the `flyx` banner:
 
@@ -58,7 +59,7 @@ The import runs lazily on the first `flyx <command>` when `~/.config/flyx/profil
 You can also trigger a re-import explicitly (it skips profiles that already exist):
 
 ```bash
-flyx auth import
+flyx x import
 ```
 
 ### Manual snapshots
@@ -67,23 +68,23 @@ Sign in with each Fly.io account using vanilla `fly auth login`, then snapshot t
 
 ```bash
 fly auth login                              # browser-based flow for account A
-flyx auth save personal                     # snapshot to "personal" profile
+flyx x save personal                     # snapshot to "personal" profile
 
 fly auth logout
 fly auth login                              # browser-based flow for account B
-flyx auth save work                         # snapshot to "work" profile
+flyx x save work                         # snapshot to "work" profile
 ```
 
 Subcommands:
 
 ```bash
-flyx auth list                              # show profiles, orgs, default
-flyx auth use <profile>                     # set the default fallback profile
-flyx auth bind <profile> --app <app>        # manual app->profile mapping
-flyx auth bind <profile> --org <slug>       # manual org->profile mapping
-flyx auth remove <profile>                  # delete a profile
-flyx auth whoami [<profile>]                # show profile details
-flyx auth import                            # re-scan ~/.fly/config*.yml
+flyx x list                              # show profiles, orgs, default
+flyx x use <profile>                     # set the default fallback profile
+flyx x bind <profile> --app <app>        # manual app->profile mapping
+flyx x bind <profile> --org <slug>       # manual org->profile mapping
+flyx x remove <profile>                  # delete a profile
+flyx x whoami [<profile>]                # show profile details
+flyx x import                            # re-scan ~/.fly/config*.yml
 ```
 
 Snapshots live in `~/.config/flyx/profiles.yml`:
@@ -106,14 +107,14 @@ mappings:
   acme: work            # org slug or git remote owner
 ```
 
-`flyx auth login` / `flyx auth logout` / `flyx auth signup` / `flyx auth docker` continue to pass through to vanilla `fly auth ...` without touching the profile store, so the login flow remains untouched.
+`flyx auth login` / `flyx auth logout` / `flyx auth signup` continue to pass through to vanilla `fly auth ...` without touching the profile store, so the login flow remains untouched. Other `fly auth ...` subcommands (`docker`, `whoami`) flow through normal token injection so they operate against the resolved profile.
 
 ## Resolution Order
 
 1. If `FLY_API_TOKEN` or `FLY_ACCESS_TOKEN` is already set in the environment, `flyx` passes through to `fly` unchanged (CI workflows).
 2. Otherwise, `flyx` walks up from the current directory and reads top-level `app` from the nearest `fly.toml`.
 3. If no project app is found, `flyx` tries the GitHub owner from `git remote get-url origin`.
-4. If neither source yields a hit, `flyx` falls back to the `default` profile (set via `flyx auth use <profile>`).
+4. If neither source yields a hit, `flyx` falls back to the `default` profile (set via `flyx x use <profile>`).
 5. The trigger key is matched against `mappings` first. On miss for a `fly.toml` app, `flyx` queries Fly's GraphQL API via each saved profile to find the owning org and caches the result back into `mappings`.
 
 ## Env Vars
@@ -129,7 +130,7 @@ In CI, set `FLY_API_TOKEN` directly — `flyx` will pass it through to `fly` wit
 ## Requirements
 
 - [`fly`](https://fly.io/docs/flyctl/install/) installed and available on `PATH`
-- At least one profile saved with `fly auth login` + `flyx auth save <profile>`
+- At least one profile saved with `fly auth login` + `flyx x save <profile>`
 
 ## Build
 

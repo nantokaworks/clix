@@ -45,7 +45,7 @@ impl fmt::Display for Error {
             Error::LegacyAccountsConfig { path } => write!(
                 f,
                 "legacy accounts.yml detected at {}; this format is no longer supported. \
-                 Run `wrangler login` and then `wranglerx auth save <profile>` to migrate.",
+                 Run `wrangler login` and then `wranglerx x save <profile>` to migrate.",
                 path.display()
             ),
             Error::ProfileNotFound { profile } => {
@@ -54,15 +54,15 @@ impl fmt::Display for Error {
             Error::NoDefaultProfile => write!(
                 f,
                 "no profile could be resolved and no default is set; \
-                 register one with `wrangler login` + `wranglerx auth save <profile>`, \
-                 then optionally `wranglerx auth use <profile>`"
+                 register one with `wrangler login` + `wranglerx x save <profile>`, \
+                 then optionally `wranglerx x use <profile>`"
             ),
             Error::UnknownTrigger { trigger, known } => {
                 write!(
                     f,
                     "no profile mapped to \"{trigger}\"; \
-                     run: `wranglerx auth bind <profile> --account-id {trigger}` (account id) \
-                     or `wranglerx auth use <profile>` (default fallback)"
+                     run: `wranglerx x bind <profile> --account-id {trigger}` (account id) \
+                     or `wranglerx x use <profile>` (default fallback)"
                 )?;
                 if !known.is_empty() {
                     write!(f, "\n  registered profiles: {}", known.join(", "))?;
@@ -75,13 +75,13 @@ impl fmt::Display for Error {
             } => write!(
                 f,
                 "profile \"{profile}\" can access multiple accounts ({}); \
-                 bind one with `wranglerx auth bind {profile} --account-id <id>`",
+                 bind one with `wranglerx x bind {profile} --account-id <id>`",
                 account_ids.join(", ")
             ),
             Error::MissingAccountId { profile } => write!(
                 f,
                 "profile \"{profile}\" has no account_id; \
-                 run: `wranglerx auth bind {profile} --account-id <id>`"
+                 run: `wranglerx x bind {profile} --account-id <id>`"
             ),
             Error::WranglerCredentialsNotFound { searched } => {
                 write!(

@@ -9,7 +9,7 @@ use crate::error::Error;
 
 // Hardcoded wrangler OAuth client_id and token endpoint, taken from the public
 // wrangler source. If wrangler rotates these, refresh will fail and the user
-// should use Plan B (`wrangler login` + `wranglerx auth save`) to refresh
+// should use Plan B (`wrangler login` + `wranglerx x save`) to refresh
 // indirectly via wrangler itself.
 const WRANGLER_OAUTH_CLIENT_ID: &str = "54d11594-84e4-41aa-b438-e81b8fa78ee7";
 const WRANGLER_OAUTH_TOKEN_URL: &str = "https://dash.cloudflare.com/oauth2/token";

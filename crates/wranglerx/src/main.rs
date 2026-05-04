@@ -1,8 +1,8 @@
-mod auth_cmd;
 mod cloudflare_api;
 mod config;
 mod error;
 mod oauth;
+mod x_cmd;
 
 use std::env;
 use std::process::{self, Command};
@@ -35,8 +35,8 @@ fn run() -> Result<(), error::Error> {
     }
 
     if let [first, rest @ ..] = args.as_slice() {
-        if first == "auth" {
-            return auth_cmd::run(rest);
+        if first == "x" {
+            return x_cmd::run(rest);
         }
     }
 
@@ -217,8 +217,8 @@ mod tests {
     }
 
     #[test]
-    fn intercepts_whoami_and_auth() {
-        for args in [vec!["whoami".to_string()], vec!["auth".to_string()]] {
+    fn intercepts_whoami_and_x() {
+        for args in [vec!["whoami".to_string()], vec!["x".to_string()]] {
             assert!(!should_passthrough(&args));
         }
     }

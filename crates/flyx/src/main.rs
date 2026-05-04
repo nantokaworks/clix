@@ -1,8 +1,8 @@
-mod auth_cmd;
 mod auto_import;
 mod config;
 mod error;
 mod fly_api;
+mod x_cmd;
 
 use std::env;
 use std::process::{self, Command};
@@ -19,10 +19,7 @@ use config::{
     trigger_source_label,
 };
 
-const FLYX_AUTH_SUBCOMMANDS: &[&str] = &[
-    "save", "import", "list", "use", "bind", "remove", "whoami",
-];
-const FLY_AUTH_PASSTHROUGH: &[&str] = &["login", "logout", "signup", "docker"];
+const FLY_AUTH_PASSTHROUGH: &[&str] = &["login", "logout", "signup"];
 
 fn run() -> Result<(), error::Error> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -42,11 +39,9 @@ fn run() -> Result<(), error::Error> {
         return run_fly(cmd);
     }
 
-    if let [first, second, rest @ ..] = args.as_slice() {
-        if first == "auth" && FLYX_AUTH_SUBCOMMANDS.iter().any(|c| c == second) {
-            let mut sub = vec![second.clone()];
-            sub.extend(rest.iter().cloned());
-            return auth_cmd::run(&sub);
+    if let [first, rest @ ..] = args.as_slice() {
+        if first == "x" {
+            return x_cmd::run(rest);
         }
     }
 
@@ -350,18 +345,17 @@ mod tests {
             vec!["auth".to_string(), "login".to_string()],
             vec!["auth".to_string(), "logout".to_string()],
             vec!["auth".to_string(), "signup".to_string()],
-            vec!["auth".to_string(), "docker".to_string()],
         ] {
             assert!(should_passthrough(&args), "{args:?}");
         }
     }
 
     #[test]
-    fn does_not_passthrough_flyx_auth_commands() {
+    fn does_not_passthrough_flyx_x_commands() {
         for args in [
-            vec!["auth".to_string(), "save".to_string(), "p".to_string()],
-            vec!["auth".to_string(), "list".to_string()],
-            vec!["auth".to_string(), "whoami".to_string()],
+            vec!["x".to_string(), "save".to_string(), "p".to_string()],
+            vec!["x".to_string(), "list".to_string()],
+            vec!["x".to_string(), "whoami".to_string()],
             vec!["deploy".to_string()],
         ] {
             assert!(!should_passthrough(&args), "{args:?}");

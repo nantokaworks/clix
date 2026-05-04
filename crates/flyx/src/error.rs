@@ -45,15 +45,15 @@ impl fmt::Display for Error {
             Error::NoDefaultProfile => write!(
                 f,
                 "no profile could be resolved and no default is set; \
-                 register one with `fly auth login` + `flyx auth save <profile>`, \
-                 then optionally `flyx auth use <profile>`"
+                 register one with `fly auth login` + `flyx x save <profile>`, \
+                 then optionally `flyx x use <profile>`"
             ),
             Error::UnknownTrigger { trigger, known } => {
                 write!(
                     f,
                     "no profile mapped to \"{trigger}\"; \
-                     run: `flyx auth bind <profile> --app {trigger}` (app or org slug) \
-                     or `flyx auth use <profile>` (default fallback)"
+                     run: `flyx x bind <profile> --app {trigger}` (app or org slug) \
+                     or `flyx x use <profile>` (default fallback)"
                 )?;
                 if !known.is_empty() {
                     write!(f, "\n  registered profiles: {}", known.join(", "))?;
@@ -63,7 +63,7 @@ impl fmt::Display for Error {
             Error::AppNotResolvable { app } => write!(
                 f,
                 "could not resolve which profile owns app \"{app}\"; \
-                 bind manually with `flyx auth bind <profile> --app {app}`"
+                 bind manually with `flyx x bind <profile> --app {app}`"
             ),
             Error::FlyConfigMissing { searched } => {
                 write!(f, "fly config file not found; run `fly auth login` first")?;

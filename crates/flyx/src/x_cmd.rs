@@ -8,15 +8,15 @@ use crate::config::{self, Profile};
 use crate::error::Error;
 use crate::fly_api;
 
-const USAGE: &str = "usage: flyx auth save <profile>\n\
-                     \x20      flyx auth import\n\
-                     \x20      flyx auth list\n\
-                     \x20      flyx auth use <profile>\n\
-                     \x20      flyx auth bind <profile> --app <app>\n\
-                     \x20      flyx auth bind <profile> --org <slug>\n\
-                     \x20      flyx auth bind <profile> --git-owner <owner>\n\
-                     \x20      flyx auth remove <profile>\n\
-                     \x20      flyx auth whoami [<profile>]";
+const USAGE: &str = "usage: flyx x save <profile>\n\
+                     \x20      flyx x import\n\
+                     \x20      flyx x list\n\
+                     \x20      flyx x use <profile>\n\
+                     \x20      flyx x bind <profile> --app <app>\n\
+                     \x20      flyx x bind <profile> --org <slug>\n\
+                     \x20      flyx x bind <profile> --git-owner <owner>\n\
+                     \x20      flyx x remove <profile>\n\
+                     \x20      flyx x whoami [<profile>]";
 
 pub fn run(args: &[String]) -> Result<(), Error> {
     match args {
@@ -148,12 +148,12 @@ fn save(profile_name: &str) -> Result<(), Error> {
     }
     match viewer.org_slugs.as_slice() {
         [] => eprintln!(
-            "flyx: no orgs probed; bind manually with `flyx auth bind {profile_name} --org <slug>`"
+            "flyx: no orgs probed; bind manually with `flyx x bind {profile_name} --org <slug>`"
         ),
         [single] => eprintln!("flyx: bound org_slug={single}"),
         many => {
             eprintln!(
-                "flyx: token has access to {} orgs (primary={}); override with `flyx auth bind {profile_name} --org <slug>`",
+                "flyx: token has access to {} orgs (primary={}); override with `flyx x bind {profile_name} --org <slug>`",
                 many.len(),
                 primary_org.as_deref().unwrap_or("(none)")
             );
@@ -169,7 +169,7 @@ fn list() -> Result<(), Error> {
     let cfg = config::read_config()?;
     if cfg.profiles.is_empty() {
         println!("No profiles registered.");
-        println!("Run `fly auth login` then `flyx auth save <profile>` to register the first one.");
+        println!("Run `fly auth login` then `flyx x save <profile>` to register the first one.");
         return Ok(());
     }
     for (name, profile) in &cfg.profiles {
@@ -226,7 +226,7 @@ fn bind(profile_name: &str, args: &[String]) -> Result<(), Error> {
         [flag, value] if flag == "--git-owner" => ("git-owner", value.clone()),
         _ => {
             return Err(Error::InvalidAuthCommand(
-                "usage: flyx auth bind <profile> --app|--org|--git-owner <value>".to_string(),
+                "usage: flyx x bind <profile> --app|--org|--git-owner <value>".to_string(),
             ));
         }
     };

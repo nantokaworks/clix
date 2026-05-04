@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,37 @@ use crate::fly_api;
 struct FlyConfigYml {
     #[serde(default)]
     access_token: Option<String>,
+    #[serde(default)]
+    wire_guard_state: BTreeMap<String, serde_yml::Value>,
+}
+
+pub(crate) struct FlyConfigSummary {
+    pub access_token: Option<String>,
+    pub wire_guard_orgs: Vec<String>,
+}
+
+/// Reads a `~/.fly/config*.yml` and returns its access_token plus the org
+/// slugs Fly has already cached locally (under `wire_guard_state` keys).
+/// Useful as a fallback when scoped macaroon tokens deny org reads via GraphQL.
+pub(crate) fn read_fly_config_summary(path: &Path) -> Result<FlyConfigSummary, Error> {
+    let content = fs::read_to_string(path).map_err(|e| Error::FlyConfigParse {
+        path: path.to_path_buf(),
+        msg: e.to_string(),
+    })?;
+    let parsed: FlyConfigYml =
+        serde_yml::from_str(&content).map_err(|e| Error::FlyConfigParse {
+            path: path.to_path_buf(),
+            msg: e.to_string(),
+        })?;
+    let access_token = parsed
+        .access_token
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let wire_guard_orgs = parsed.wire_guard_state.into_keys().collect();
+    Ok(FlyConfigSummary {
+        access_token,
+        wire_guard_orgs,
+    })
 }
 
 pub struct ImportResult {
@@ -116,7 +148,16 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
     })
 }
 
-fn discover_fly_config_files() -> Result<Vec<PathBuf>, Error> {
+/// In-place dedup-merge: appends slugs from `extra` that aren't already in `into`.
+pub(crate) fn merge_org_slugs(into: &mut Vec<String>, extra: &[String]) {
+    for slug in extra {
+        if !into.iter().any(|s| s == slug) {
+            into.push(slug.clone());
+        }
+    }
+}
+
+pub(crate) fn discover_fly_config_files() -> Result<Vec<PathBuf>, Error> {
     let home = dirs::home_dir().ok_or(Error::ConfigDirUnavailable)?;
     let fly_dir = home.join(".fly");
     if !fly_dir.is_dir() {

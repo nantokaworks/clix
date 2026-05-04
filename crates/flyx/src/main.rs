@@ -5,6 +5,8 @@ mod fly_api;
 mod help;
 mod resolve;
 mod x_cmd;
+mod x_refresh;
+mod x_token;
 
 use std::env;
 use std::process::{self, Command};

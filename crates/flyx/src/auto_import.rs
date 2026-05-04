@@ -56,23 +56,9 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
     let mut skipped_existing = Vec::new();
 
     for path in files {
-        let content = fs::read_to_string(&path).map_err(|e| Error::FlyConfigParse {
-            path: path.clone(),
-            msg: e.to_string(),
-        })?;
-        let parsed: FlyConfigYml =
-            serde_yml::from_str(&content).map_err(|e| Error::FlyConfigParse {
-                path: path.clone(),
-                msg: e.to_string(),
-            })?;
-        let token = match parsed.access_token {
-            Some(t) => {
-                let trimmed = t.trim().to_string();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                trimmed
-            }
+        let summary = read_fly_config_summary(&path)?;
+        let token = match summary.access_token {
+            Some(t) => t,
             None => continue,
         };
 
@@ -87,7 +73,7 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
             path.display()
         );
 
-        let viewer = match fly_api::fetch_viewer(&token) {
+        let mut viewer = match fly_api::fetch_viewer(&token) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!(
@@ -99,6 +85,7 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
                 }
             }
         };
+        merge_org_slugs(&mut viewer.org_slugs, &summary.wire_guard_orgs);
 
         let primary_org = match viewer.org_slugs.as_slice() {
             [single] => Some(single.clone()),

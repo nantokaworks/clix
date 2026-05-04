@@ -8,6 +8,7 @@ use crate::config::{self, Profile};
 use crate::error::Error;
 use crate::fly_api;
 use crate::help;
+use crate::x_refresh;
 
 pub fn run(args: &[String]) -> Result<(), Error> {
     if args.is_empty() || help::is_x_help_arg(args) {
@@ -22,6 +23,8 @@ pub fn run(args: &[String]) -> Result<(), Error> {
         [cmd, name] if cmd == "save" => save(name),
         [cmd, name] if cmd == "remove" => remove(name),
         [cmd] if cmd == "import" => import(),
+        [cmd] if cmd == "refresh" => x_refresh::refresh(None),
+        [cmd, name] if cmd == "refresh" => x_refresh::refresh(Some(name)),
         [cmd] if cmd == "whoami" => whoami(None),
         [cmd, name] if cmd == "whoami" => whoami(Some(name)),
         _ => Err(Error::InvalidAuthCommand(help::X_USAGE.trim().to_string())),
@@ -93,7 +96,7 @@ fn candidate_fly_config_paths() -> Result<Vec<PathBuf>, Error> {
 fn save(profile_name: &str) -> Result<(), Error> {
     let (cfg_path, token) = read_fly_access_token()?;
 
-    let viewer = match fly_api::fetch_viewer(&token) {
+    let mut viewer = match fly_api::fetch_viewer(&token) {
         Ok(v) => v,
         Err(e) => {
             eprintln!(
@@ -106,12 +109,15 @@ fn save(profile_name: &str) -> Result<(), Error> {
         }
     };
 
+    // Macaroon (`fm2_*`) tokens often deny GraphQL org reads. Harvest the org
+    // slugs Fly has already cached locally under `wire_guard_state` as a backup.
+    if let Ok(summary) = auto_import::read_fly_config_summary(&cfg_path) {
+        auto_import::merge_org_slugs(&mut viewer.org_slugs, &summary.wire_guard_orgs);
+    }
+
     let mut cfg = config::read_config()?;
 
-    let primary_org = match viewer.org_slugs.as_slice() {
-        [single] => Some(single.clone()),
-        many => many.iter().find(|s| s.as_str() == "personal").cloned(),
-    };
+    let primary_org = x_refresh::pick_primary(&viewer.org_slugs);
 
     let profile = Profile {
         access_token: token,
@@ -277,18 +283,17 @@ fn whoami(profile_name: Option<&str>) -> Result<(), Error> {
         "org_slug: {}",
         profile.org_slug.as_deref().unwrap_or("(unbound)")
     );
+    if profile.org_slug.is_none() {
+        println!(
+            "hint: run `flyx x refresh {name}` or bind manually with `flyx x bind {name} <slug>`"
+        );
+    }
     if !profile.org_slugs.is_empty() {
         println!("accessible_orgs: {}", profile.org_slugs.join(", "));
     }
-    println!("token: {}", mask_token(&profile.access_token));
+    println!(
+        "token: {}",
+        crate::x_token::mask_token(&profile.access_token)
+    );
     Ok(())
-}
-
-fn mask_token(token: &str) -> String {
-    if token.len() <= 12 {
-        return "*".repeat(token.len());
-    }
-    let head = &token[..6];
-    let tail = &token[token.len() - 4..];
-    format!("{head}…{tail}")
 }

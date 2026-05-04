@@ -207,7 +207,7 @@ dependencies = [
 
 [[package]]
 name = "flyx"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clix-core",
  "colored",

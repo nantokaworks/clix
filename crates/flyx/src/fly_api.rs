@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -63,9 +64,24 @@ struct App {
     organization: Option<Organization>,
 }
 
+#[derive(Deserialize)]
+struct AppsData {
+    apps: Option<AppsConnection>,
+}
+
+#[derive(Deserialize)]
+struct AppsConnection {
+    #[serde(default)]
+    nodes: Vec<Option<App>>,
+}
+
 const VIEWER_QUERY: &str = r#"query {
   viewer { email }
   organizations { nodes { slug } }
+}"#;
+
+const APPS_ORGS_QUERY: &str = r#"query {
+  apps(first: 100) { nodes { organization { slug } } }
 }"#;
 
 const APP_ORG_QUERY: &str = r#"query($name: String!) {
@@ -75,16 +91,38 @@ const APP_ORG_QUERY: &str = r#"query($name: String!) {
 pub fn fetch_viewer(token: &str) -> Result<ViewerInfo, Error> {
     let data: ViewerData = post_graphql(token, VIEWER_QUERY, None::<()>)?;
     let email = data.viewer.and_then(|v| v.email);
-    let org_slugs = data
+    let mut org_slugs: Vec<String> = data
         .organizations
-        .map(|o| {
-            o.nodes
-                .into_iter()
-                .flatten()
-                .map(|n| n.slug)
-                .collect()
-        })
+        .map(|o| o.nodes.into_iter().flatten().map(|n| n.slug).collect())
         .unwrap_or_default();
+
+    // Macaroon (`fm2_*`) tokens often return [] from the top-level
+    // `organizations` field because that query needs a capability the
+    // macaroon doesn't carry. Fall back to listing apps the token can see
+    // and harvesting their owning org slugs.
+    if org_slugs.is_empty() {
+        match post_graphql::<AppsData, _>(token, APPS_ORGS_QUERY, None::<()>) {
+            Ok(apps_data) => {
+                let mut seen = HashSet::new();
+                if let Some(conn) = apps_data.apps {
+                    for slug in conn
+                        .nodes
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|app| app.organization.map(|o| o.slug))
+                    {
+                        if seen.insert(slug.clone()) {
+                            org_slugs.push(slug);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("flyx: warning: org fallback via apps query failed: {e}");
+            }
+        }
+    }
+
     Ok(ViewerInfo { email, org_slugs })
 }
 

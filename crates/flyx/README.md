@@ -85,6 +85,7 @@ flyx x unbind <trigger>                  # delete a mapping
 flyx x remove <profile>                  # delete a profile
 flyx x whoami [<profile>]                # show profile details
 flyx x import                            # re-scan ~/.fly/config*.yml
+flyx x refresh [<profile>]               # re-probe org info using saved tokens
 ```
 
 Snapshots live in `~/.config/flyx/profiles.yml`:
@@ -108,6 +109,8 @@ mappings:
 ```
 
 `flyx auth login` / `flyx auth logout` / `flyx auth signup` continue to pass through to vanilla `fly auth ...` without touching the profile store, so the login flow remains untouched. Other `fly auth ...` subcommands (`docker`, `whoami`) flow through normal token injection so they operate against the resolved profile.
+
+Recent `fly auth login` issues macaroon-based tokens (`fm2_*` bundles) whose `organizations` field can be denied by the macaroon's caveats — leaving a profile with email but no `org_slug`. `flyx` works around this by also harvesting org slugs from (a) the first 100 apps the token can read via `apps { nodes { organization { slug } } }` and (b) the local `~/.fly/config*.yml` `wire_guard_state` keys whose root macaroon matches the profile's token. If a profile still shows `org_slug: (unbound)` in `whoami`, run `flyx x refresh <profile>` to re-probe; for tokens scoped past every fallback, `flyx x bind <profile> <slug>` sets it manually.
 
 ## Resolution Order
 

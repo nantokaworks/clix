@@ -5,6 +5,7 @@ pub const X_USAGE: &str = "usage: flyx x list\n\
                            \x20      flyx x save <profile>\n\
                            \x20      flyx x remove <profile>\n\
                            \x20      flyx x import\n\
+                           \x20      flyx x refresh [<profile>]\n\
                            \x20      flyx x whoami [<profile>]\n";
 
 pub const BARE_HINT: &str =
@@ -18,6 +19,7 @@ pub const EXTRAS_SECTION: &str = "\nflyx extras (wrapper-specific subcommands):\
     \x20 flyx x save <profile>             snapshot ~/.fly/config.yml into a profile\n\
     \x20 flyx x remove <profile>           delete a profile\n\
     \x20 flyx x import                     auto-import profiles from ~/.fly/\n\
+    \x20 flyx x refresh [<profile>]        re-probe org info using saved tokens\n\
     \x20 flyx x whoami [<profile>]         show profile details\n\
     \x20 flyx x --help                     show this list\n";
 

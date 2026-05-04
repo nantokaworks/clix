@@ -1,23 +1,15 @@
 use crate::cloudflare_api;
 use crate::config::{self, Profile, ProfilesConfig};
 use crate::error::Error;
+use crate::help;
 use crate::oauth;
 
-const USAGE: &str = "usage: wranglerx x list\n\
-                     \x20      wranglerx x bind <profile> <trigger>\n\
-                     \x20      wranglerx x unbind <trigger>\n\
-                     \x20      wranglerx x use <profile>\n\
-                     \x20      wranglerx x save <profile>\n\
-                     \x20      wranglerx x remove <profile>\n\
-                     \x20      wranglerx x refresh <profile>\n\
-                     \x20      wranglerx x whoami [<profile>]";
-
 pub fn run(args: &[String]) -> Result<(), Error> {
+    if args.is_empty() || help::is_x_help_arg(args) {
+        clix_core::exec::write_or_exit_on_pipe_close(help::X_USAGE);
+        return Ok(());
+    }
     match args {
-        [] => {
-            println!("{USAGE}");
-            Ok(())
-        }
         [cmd] if cmd == "list" => list(),
         [cmd, name, trigger] if cmd == "bind" => bind(name, trigger),
         [cmd, trigger] if cmd == "unbind" => unbind(trigger),
@@ -27,7 +19,7 @@ pub fn run(args: &[String]) -> Result<(), Error> {
         [cmd, name] if cmd == "refresh" => refresh(name),
         [cmd] if cmd == "whoami" => whoami(None),
         [cmd, name] if cmd == "whoami" => whoami(Some(name)),
-        _ => Err(Error::InvalidAuthCommand(USAGE.to_string())),
+        _ => Err(Error::InvalidAuthCommand(help::X_USAGE.trim().to_string())),
     }
 }
 

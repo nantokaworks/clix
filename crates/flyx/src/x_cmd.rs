@@ -7,22 +7,14 @@ use crate::auto_import;
 use crate::config::{self, Profile};
 use crate::error::Error;
 use crate::fly_api;
-
-const USAGE: &str = "usage: flyx x list\n\
-                     \x20      flyx x bind <profile> <trigger>\n\
-                     \x20      flyx x unbind <trigger>\n\
-                     \x20      flyx x use <profile>\n\
-                     \x20      flyx x save <profile>\n\
-                     \x20      flyx x remove <profile>\n\
-                     \x20      flyx x import\n\
-                     \x20      flyx x whoami [<profile>]";
+use crate::help;
 
 pub fn run(args: &[String]) -> Result<(), Error> {
+    if args.is_empty() || help::is_x_help_arg(args) {
+        clix_core::exec::write_or_exit_on_pipe_close(help::X_USAGE);
+        return Ok(());
+    }
     match args {
-        [] => {
-            println!("{USAGE}");
-            Ok(())
-        }
         [cmd] if cmd == "list" => list(),
         [cmd, name, trigger] if cmd == "bind" => bind(name, trigger),
         [cmd, trigger] if cmd == "unbind" => unbind(trigger),
@@ -32,7 +24,7 @@ pub fn run(args: &[String]) -> Result<(), Error> {
         [cmd] if cmd == "import" => import(),
         [cmd] if cmd == "whoami" => whoami(None),
         [cmd, name] if cmd == "whoami" => whoami(Some(name)),
-        _ => Err(Error::InvalidAuthCommand(USAGE.to_string())),
+        _ => Err(Error::InvalidAuthCommand(help::X_USAGE.trim().to_string())),
     }
 }
 

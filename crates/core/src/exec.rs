@@ -1,4 +1,5 @@
 use std::fmt;
+use std::io::{self, Write};
 use std::process::Command;
 
 #[derive(Debug)]
@@ -41,4 +42,40 @@ pub fn exec_replace(mut cmd: Command) -> Result<(), ExecError> {
         }
     })?;
     std::process::exit(status.code().unwrap_or(1));
+}
+
+/// 子プロセスを最後まで動かしたあと、こちら側で `trailer` を stdout に書き出してから
+/// 子の終了コードで exit する。pipe 先 (例: `head`) が早く閉じても panic しないよう、
+/// BrokenPipe は子の終了コードを保ったまま静かに終了させる。
+pub fn run_with_trailer(mut cmd: Command, trailer: &str) -> Result<(), ExecError> {
+    let status = cmd.status().map_err(|e| {
+        if e.kind() == io::ErrorKind::NotFound {
+            ExecError::NotFound
+        } else {
+            ExecError::Failed(e.to_string())
+        }
+    })?;
+    let code = status.code().unwrap_or(1);
+    let mut out = io::stdout().lock();
+    if let Err(e) = out.write_all(trailer.as_bytes()) {
+        if e.kind() == io::ErrorKind::BrokenPipe {
+            std::process::exit(code);
+        }
+        return Err(ExecError::Failed(e.to_string()));
+    }
+    let _ = out.flush();
+    std::process::exit(code);
+}
+
+/// stdout への best-effort 書き出し。BrokenPipe を 0 終了で握りつぶし、それ以外の
+/// 失敗は上位に返さず無視する (banner や hint 表示用途)。
+pub fn write_or_exit_on_pipe_close(s: &str) {
+    let mut out = io::stdout().lock();
+    match out.write_all(s.as_bytes()) {
+        Ok(_) => {
+            let _ = out.flush();
+        }
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
+        Err(_) => {}
+    }
 }

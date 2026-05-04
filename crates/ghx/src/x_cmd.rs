@@ -4,23 +4,19 @@ use clix_core::git;
 
 use crate::config;
 use crate::error::Error;
-
-const USAGE: &str = "usage: ghx x list\n\
-                     \x20      ghx x bind <user> <owner>\n\
-                     \x20      ghx x unbind <owner>\n\
-                     \x20      ghx x whoami";
+use crate::help;
 
 pub fn run(args: &[String]) -> Result<(), Error> {
+    if args.is_empty() || help::is_x_help_arg(args) {
+        clix_core::exec::write_or_exit_on_pipe_close(help::X_USAGE);
+        return Ok(());
+    }
     match args {
-        [] => {
-            println!("{USAGE}");
-            Ok(())
-        }
         [cmd] if cmd == "list" => list(),
         [cmd, user, owner] if cmd == "bind" => bind(user, owner),
         [cmd, owner] if cmd == "unbind" => unbind(owner),
         [cmd] if cmd == "whoami" => whoami(),
-        _ => Err(Error::InvalidXCommand(USAGE.to_string())),
+        _ => Err(Error::InvalidXCommand(help::X_USAGE.trim().to_string())),
     }
 }
 

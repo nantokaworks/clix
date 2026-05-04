@@ -158,8 +158,8 @@ To skip the API call and explicitly map organizations to accounts, use the `ghx 
 
 ```bash
 ghx x list                   # show gh accounts and current owner mappings
-ghx x bind my-org alice      # map an owner to a gh user
-ghx x remove my-org          # delete a mapping
+ghx x bind alice my-org      # map a gh user to an owner
+ghx x unbind my-org          # delete a mapping
 ghx x whoami                 # show resolution for the current repo's origin owner
 ```
 

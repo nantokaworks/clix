@@ -80,8 +80,8 @@ Subcommands:
 ```bash
 flyx x list                              # show profiles, orgs, default
 flyx x use <profile>                     # set the default fallback profile
-flyx x bind <profile> --app <app>        # manual app->profile mapping
-flyx x bind <profile> --org <slug>       # manual org->profile mapping
+flyx x bind <profile> <trigger>          # map a trigger (app / org / git-owner) to a profile
+flyx x unbind <trigger>                  # delete a mapping
 flyx x remove <profile>                  # delete a profile
 flyx x whoami [<profile>]                # show profile details
 flyx x import                            # re-scan ~/.fly/config*.yml

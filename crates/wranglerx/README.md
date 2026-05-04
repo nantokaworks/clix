@@ -77,7 +77,8 @@ Subcommands:
 ```bash
 wranglerx x list                         # show profiles, account_ids, expirations
 wranglerx x use <profile>                # set the default fallback profile
-wranglerx x bind <profile> --account-id <id>   # manual mapping (multi-account tokens)
+wranglerx x bind <profile> <trigger>           # map a trigger (account_id) to a profile
+wranglerx x unbind <trigger>                   # delete a mapping
 wranglerx x remove <profile>             # delete a profile
 wranglerx x refresh <profile>            # force OAuth refresh
 wranglerx x whoami [<profile>]           # show profile details

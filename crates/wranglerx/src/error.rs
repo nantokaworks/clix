@@ -15,6 +15,7 @@ pub enum Error {
     ProfileNotFound { profile: String },
     NoDefaultProfile,
     UnknownTrigger { trigger: String, known: Vec<String> },
+    UnknownMapping { trigger: String },
     AmbiguousAccountId { profile: String, account_ids: Vec<String> },
     MissingAccountId { profile: String },
     WranglerCredentialsNotFound { searched: Vec<PathBuf> },
@@ -61,7 +62,7 @@ impl fmt::Display for Error {
                 write!(
                     f,
                     "no profile mapped to \"{trigger}\"; \
-                     run: `wranglerx x bind <profile> --account-id {trigger}` (account id) \
+                     run: `wranglerx x bind <profile> {trigger}` \
                      or `wranglerx x use <profile>` (default fallback)"
                 )?;
                 if !known.is_empty() {
@@ -69,19 +70,23 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            Error::UnknownMapping { trigger } => write!(
+                f,
+                "no mapping found for \"{trigger}\""
+            ),
             Error::AmbiguousAccountId {
                 profile,
                 account_ids,
             } => write!(
                 f,
                 "profile \"{profile}\" can access multiple accounts ({}); \
-                 bind one with `wranglerx x bind {profile} --account-id <id>`",
+                 bind one with `wranglerx x bind {profile} <id>`",
                 account_ids.join(", ")
             ),
             Error::MissingAccountId { profile } => write!(
                 f,
                 "profile \"{profile}\" has no account_id; \
-                 run: `wranglerx x bind {profile} --account-id <id>`"
+                 run: `wranglerx x bind {profile} <id>`"
             ),
             Error::WranglerCredentialsNotFound { searched } => {
                 write!(

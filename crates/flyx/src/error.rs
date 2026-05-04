@@ -14,6 +14,7 @@ pub enum Error {
     ProfileNotFound { profile: String },
     NoDefaultProfile,
     UnknownTrigger { trigger: String, known: Vec<String> },
+    UnknownMapping { trigger: String },
     AppNotResolvable { app: String },
     FlyConfigMissing { searched: Vec<PathBuf> },
     FlyConfigParse { path: PathBuf, msg: String },
@@ -52,7 +53,7 @@ impl fmt::Display for Error {
                 write!(
                     f,
                     "no profile mapped to \"{trigger}\"; \
-                     run: `flyx x bind <profile> --app {trigger}` (app or org slug) \
+                     run: `flyx x bind <profile> {trigger}` \
                      or `flyx x use <profile>` (default fallback)"
                 )?;
                 if !known.is_empty() {
@@ -60,10 +61,14 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            Error::UnknownMapping { trigger } => write!(
+                f,
+                "no mapping found for \"{trigger}\""
+            ),
             Error::AppNotResolvable { app } => write!(
                 f,
                 "could not resolve which profile owns app \"{app}\"; \
-                 bind manually with `flyx x bind <profile> --app {app}`"
+                 bind manually with `flyx x bind <profile> {app}`"
             ),
             Error::FlyConfigMissing { searched } => {
                 write!(f, "fly config file not found; run `fly auth login` first")?;

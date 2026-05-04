@@ -3,20 +3,22 @@ use crate::config::{self, Profile, ProfilesConfig};
 use crate::error::Error;
 use crate::oauth;
 
-const USAGE: &str = "usage: wranglerx auth save <profile>\n\
-                     \x20      wranglerx auth list\n\
-                     \x20      wranglerx auth use <profile>\n\
-                     \x20      wranglerx auth bind <profile> --account-id <id>\n\
-                     \x20      wranglerx auth remove <profile>\n\
-                     \x20      wranglerx auth refresh <profile>\n\
-                     \x20      wranglerx auth whoami [<profile>]";
+const USAGE: &str = "usage: wranglerx x list\n\
+                     \x20      wranglerx x bind <profile> <trigger>\n\
+                     \x20      wranglerx x unbind <trigger>\n\
+                     \x20      wranglerx x use <profile>\n\
+                     \x20      wranglerx x save <profile>\n\
+                     \x20      wranglerx x remove <profile>\n\
+                     \x20      wranglerx x refresh <profile>\n\
+                     \x20      wranglerx x whoami [<profile>]";
 
 pub fn run(args: &[String]) -> Result<(), Error> {
     match args {
-        [cmd, name] if cmd == "save" => save(name),
         [cmd] if cmd == "list" => list(),
+        [cmd, name, trigger] if cmd == "bind" => bind(name, trigger),
+        [cmd, trigger] if cmd == "unbind" => unbind(trigger),
         [cmd, name] if cmd == "use" => use_default(name),
-        [cmd, name, rest @ ..] if cmd == "bind" => bind(name, rest),
+        [cmd, name] if cmd == "save" => save(name),
         [cmd, name] if cmd == "remove" => remove(name),
         [cmd, name] if cmd == "refresh" => refresh(name),
         [cmd] if cmd == "whoami" => whoami(None),
@@ -147,16 +149,7 @@ fn use_default(profile_name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn bind(profile_name: &str, args: &[String]) -> Result<(), Error> {
-    let account_id = match args {
-        [flag, value] if flag == "--account-id" => value.clone(),
-        _ => {
-            return Err(Error::InvalidAuthCommand(
-                "usage: wranglerx auth bind <profile> --account-id <id>".to_string(),
-            ));
-        }
-    };
-
+fn bind(profile_name: &str, trigger: &str) -> Result<(), Error> {
     let mut cfg = config::read_config()?;
     if !cfg.profiles.contains_key(profile_name) {
         return Err(Error::ProfileNotFound {
@@ -165,19 +158,31 @@ fn bind(profile_name: &str, args: &[String]) -> Result<(), Error> {
     }
 
     cfg.mappings
-        .insert(account_id.clone(), profile_name.to_string());
+        .insert(trigger.to_string(), profile_name.to_string());
 
     if let Some(profile) = cfg.profiles.get_mut(profile_name) {
         if profile.account_id.is_none() {
-            profile.account_id = Some(account_id.clone());
+            profile.account_id = Some(trigger.to_string());
         }
-        if !profile.account_ids.iter().any(|id| id == &account_id) {
-            profile.account_ids.push(account_id.clone());
+        if !profile.account_ids.iter().any(|id| id == trigger) {
+            profile.account_ids.push(trigger.to_string());
         }
     }
 
     config::write_config(&cfg)?;
-    eprintln!("wranglerx: bound {account_id} -> {profile_name}");
+    eprintln!("wranglerx: bound {trigger} -> {profile_name}");
+    Ok(())
+}
+
+fn unbind(trigger: &str) -> Result<(), Error> {
+    let mut cfg = config::read_config()?;
+    if cfg.mappings.remove(trigger).is_none() {
+        return Err(Error::UnknownMapping {
+            trigger: trigger.to_string(),
+        });
+    }
+    config::write_config(&cfg)?;
+    eprintln!("wranglerx: unbound {trigger}");
     Ok(())
 }
 

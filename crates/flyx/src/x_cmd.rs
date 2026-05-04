@@ -8,24 +8,24 @@ use crate::config::{self, Profile};
 use crate::error::Error;
 use crate::fly_api;
 
-const USAGE: &str = "usage: flyx x save <profile>\n\
-                     \x20      flyx x import\n\
-                     \x20      flyx x list\n\
+const USAGE: &str = "usage: flyx x list\n\
+                     \x20      flyx x bind <profile> <trigger>\n\
+                     \x20      flyx x unbind <trigger>\n\
                      \x20      flyx x use <profile>\n\
-                     \x20      flyx x bind <profile> --app <app>\n\
-                     \x20      flyx x bind <profile> --org <slug>\n\
-                     \x20      flyx x bind <profile> --git-owner <owner>\n\
+                     \x20      flyx x save <profile>\n\
                      \x20      flyx x remove <profile>\n\
+                     \x20      flyx x import\n\
                      \x20      flyx x whoami [<profile>]";
 
 pub fn run(args: &[String]) -> Result<(), Error> {
     match args {
-        [cmd, name] if cmd == "save" => save(name),
-        [cmd] if cmd == "import" => import(),
         [cmd] if cmd == "list" => list(),
+        [cmd, name, trigger] if cmd == "bind" => bind(name, trigger),
+        [cmd, trigger] if cmd == "unbind" => unbind(trigger),
         [cmd, name] if cmd == "use" => use_default(name),
-        [cmd, name, rest @ ..] if cmd == "bind" => bind(name, rest),
+        [cmd, name] if cmd == "save" => save(name),
         [cmd, name] if cmd == "remove" => remove(name),
+        [cmd] if cmd == "import" => import(),
         [cmd] if cmd == "whoami" => whoami(None),
         [cmd, name] if cmd == "whoami" => whoami(Some(name)),
         _ => Err(Error::InvalidAuthCommand(USAGE.to_string())),
@@ -148,12 +148,12 @@ fn save(profile_name: &str) -> Result<(), Error> {
     }
     match viewer.org_slugs.as_slice() {
         [] => eprintln!(
-            "flyx: no orgs probed; bind manually with `flyx x bind {profile_name} --org <slug>`"
+            "flyx: no orgs probed; bind manually with `flyx x bind {profile_name} <trigger>`"
         ),
         [single] => eprintln!("flyx: bound org_slug={single}"),
         many => {
             eprintln!(
-                "flyx: token has access to {} orgs (primary={}); override with `flyx x bind {profile_name} --org <slug>`",
+                "flyx: token has access to {} orgs (primary={}); override with `flyx x bind {profile_name} <trigger>`",
                 many.len(),
                 primary_org.as_deref().unwrap_or("(none)")
             );
@@ -219,18 +219,7 @@ fn use_default(profile_name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn bind(profile_name: &str, args: &[String]) -> Result<(), Error> {
-    let (kind, value) = match args {
-        [flag, value] if flag == "--app" => ("app", value.clone()),
-        [flag, value] if flag == "--org" => ("org", value.clone()),
-        [flag, value] if flag == "--git-owner" => ("git-owner", value.clone()),
-        _ => {
-            return Err(Error::InvalidAuthCommand(
-                "usage: flyx x bind <profile> --app|--org|--git-owner <value>".to_string(),
-            ));
-        }
-    };
-
+fn bind(profile_name: &str, trigger: &str) -> Result<(), Error> {
     let mut cfg = config::read_config()?;
     if !cfg.profiles.contains_key(profile_name) {
         return Err(Error::ProfileNotFound {
@@ -238,21 +227,23 @@ fn bind(profile_name: &str, args: &[String]) -> Result<(), Error> {
         });
     }
 
-    cfg.mappings.insert(value.clone(), profile_name.to_string());
-
-    if kind == "org" {
-        if let Some(profile) = cfg.profiles.get_mut(profile_name) {
-            if profile.org_slug.is_none() {
-                profile.org_slug = Some(value.clone());
-            }
-            if !profile.org_slugs.iter().any(|s| s == &value) {
-                profile.org_slugs.push(value.clone());
-            }
-        }
-    }
+    cfg.mappings
+        .insert(trigger.to_string(), profile_name.to_string());
 
     config::write_config(&cfg)?;
-    eprintln!("flyx: bound {kind}={value} -> {profile_name}");
+    eprintln!("flyx: bound {trigger} -> {profile_name}");
+    Ok(())
+}
+
+fn unbind(trigger: &str) -> Result<(), Error> {
+    let mut cfg = config::read_config()?;
+    if cfg.mappings.remove(trigger).is_none() {
+        return Err(Error::UnknownMapping {
+            trigger: trigger.to_string(),
+        });
+    }
+    config::write_config(&cfg)?;
+    eprintln!("flyx: unbound {trigger}");
     Ok(())
 }
 

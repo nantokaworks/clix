@@ -1,0 +1,55 @@
+name: Auto-tag CLI releases
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  auto-tag:
+    name: Tag new per-CLI versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use a PAT so the tag push triggers the per-CLI release workflows.
+          # GITHUB_TOKEN-pushed tags do not fire downstream workflows.
+          # Falls back to GITHUB_TOKEN (tags still get created, but downstream
+          # release-<crate>.yml workflows must be dispatched manually).
+          token: ${{ secrets.RELEASE_TAG_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Create per-CLI tags for new versions
+        run: |
+          set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          for crate in ghx wranglerx flyx; do
+            cargo_toml="crates/${crate}/Cargo.toml"
+            if [ ! -f "$cargo_toml" ]; then
+              echo "::warning::${cargo_toml} not found, skipping ${crate}"
+              continue
+            fi
+
+            version=$(grep -m1 '^version[[:space:]]*=' "$cargo_toml" | sed 's/.*"\(.*\)".*/\1/')
+            if [ -z "$version" ]; then
+              echo "::warning::could not parse version from ${cargo_toml}, skipping ${crate}"
+              continue
+            fi
+
+            tag="${crate}-v${version}"
+
+            if git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
+              echo "Tag ${tag} already exists on origin; skipping"
+              continue
+            fi
+
+            echo "Creating and pushing ${tag}"
+            git tag -a "${tag}" -m "Release ${crate} ${version}"
+            git push origin "${tag}"
+          done

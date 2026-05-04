@@ -20,12 +20,13 @@ struct ResultInfo {
     total_count: Option<usize>,
 }
 
-pub fn token_has_account(token: &str, account_id: &str) -> Result<bool, Error> {
+pub fn list_account_ids(token: &str) -> Result<Vec<String>, Error> {
     let response = list_accounts(token)?;
     Ok(response
         .result
-        .iter()
-        .any(|account| account.id == account_id))
+        .into_iter()
+        .map(|account| account.id)
+        .collect())
 }
 
 fn list_accounts(token: &str) -> Result<AccountsResponse, Error> {

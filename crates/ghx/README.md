@@ -154,10 +154,18 @@ If the owner matches one of the entries under `github.com.users` in `hosts.yml`,
 
 When a repository is owned by a GitHub organization, `ghx` automatically detects which account is a member of that organization via the GitHub API.
 
-To skip the API call and explicitly map organizations to accounts, create `~/.config/ghx/accounts.yml`:
+To skip the API call and explicitly map organizations to accounts, use the `ghx x` namespace (or edit `~/.config/ghx/accounts.yml` directly):
+
+```bash
+ghx x list                   # show gh accounts and current owner mappings
+ghx x bind alice my-org      # map a gh user to an owner
+ghx x unbind my-org          # delete a mapping
+ghx x whoami                 # show resolution for the current repo's origin owner
+```
+
+The file written by `ghx x bind` is `~/.config/ghx/accounts.yml`:
 
 ```yaml
-# ~/.config/ghx/accounts.yml
 accounts:
   my-org: my-username
   another-org: another-username

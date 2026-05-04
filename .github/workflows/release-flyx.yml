@@ -1,9 +1,9 @@
-name: Release wranglerx
+name: Release flyx
 
 on:
   push:
     tags:
-      - "wranglerx-v*"
+      - "flyx-v*"
   workflow_dispatch:
 
 permissions:
@@ -49,34 +49,34 @@ jobs:
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          VERSION="${TAG#wranglerx-v}"
+          VERSION="${TAG#flyx-v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
-        run: cargo build --release -p wranglerx --target ${{ matrix.target }}
+        run: cargo build --release -p flyx --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../wranglerx-v${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz wranglerx
+          tar czf ../../../flyx-v${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz flyx
           cd ../../..
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../wranglerx-v${{ steps.version.outputs.version }}-${{ matrix.target }}.zip wranglerx.exe
+          7z a ../../../flyx-v${{ steps.version.outputs.version }}-${{ matrix.target }}.zip flyx.exe
           cd ../../..
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wranglerx-${{ matrix.target }}
-          path: wranglerx-v${{ steps.version.outputs.version }}-${{ matrix.target }}.*
+          name: flyx-${{ matrix.target }}
+          path: flyx-v${{ steps.version.outputs.version }}-${{ matrix.target }}.*
 
   release:
     name: Create Release
@@ -89,7 +89,7 @@ jobs:
         id: version
         run: |
           TAG="${{ github.ref_name }}"
-          VERSION="${TAG#wranglerx-v}"
+          VERSION="${TAG#flyx-v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -108,15 +108,15 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           cd artifacts
-          for f in wranglerx-v*; do
+          for f in flyx-v*; do
             sha256sum "$f"
           done | tee ../checksums.txt
 
-          echo "sha_macos_arm=$(sha256sum wranglerx-v${VERSION}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "sha_macos_x86=$(sha256sum wranglerx-v${VERSION}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "sha_linux_arm=$(sha256sum wranglerx-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "sha_linux_x86=$(sha256sum wranglerx-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "sha_windows_x86=$(sha256sum wranglerx-v${VERSION}-x86_64-pc-windows-msvc.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_macos_arm=$(sha256sum flyx-v${VERSION}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_macos_x86=$(sha256sum flyx-v${VERSION}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_arm=$(sha256sum flyx-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_x86=$(sha256sum flyx-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_windows_x86=$(sha256sum flyx-v${VERSION}-x86_64-pc-windows-msvc.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -141,13 +141,13 @@ jobs:
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/nantokaworks/homebrew-tap.git" homebrew-tap
           cd homebrew-tap
 
-          BRANCH="wranglerx-${VERSION}"
+          BRANCH="flyx-${VERSION}"
           git checkout -b "$BRANCH"
           mkdir -p Formula
 
           printf '%s\n' \
-            'class Wranglerx < Formula' \
-            '  desc "Multi-account Cloudflare Wrangler CLI, powered by wrangler"' \
+            'class Flyx < Formula' \
+            '  desc "Multi-account Fly.io CLI wrapper, powered by fly"' \
             '  homepage "https://github.com/nantokaworks/clix"' \
             '  license "MIT"' \
             '' \
@@ -158,51 +158,51 @@ jobs:
             '' \
             '  on_macos do' \
             '    on_arm do' \
-            "      url \"${BASE_URL}/wranglerx-v${VERSION}-aarch64-apple-darwin.tar.gz\"" \
+            "      url \"${BASE_URL}/flyx-v${VERSION}-aarch64-apple-darwin.tar.gz\"" \
             "      sha256 \"${SHA_MACOS_ARM}\"" \
             '    end' \
             '    on_intel do' \
-            "      url \"${BASE_URL}/wranglerx-v${VERSION}-x86_64-apple-darwin.tar.gz\"" \
+            "      url \"${BASE_URL}/flyx-v${VERSION}-x86_64-apple-darwin.tar.gz\"" \
             "      sha256 \"${SHA_MACOS_X86}\"" \
             '    end' \
             '  end' \
             '' \
             '  on_linux do' \
             '    on_arm do' \
-            "      url \"${BASE_URL}/wranglerx-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz\"" \
+            "      url \"${BASE_URL}/flyx-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz\"" \
             "      sha256 \"${SHA_LINUX_ARM}\"" \
             '    end' \
             '    on_intel do' \
-            "      url \"${BASE_URL}/wranglerx-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\"" \
+            "      url \"${BASE_URL}/flyx-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\"" \
             "      sha256 \"${SHA_LINUX_X86}\"" \
             '    end' \
             '  end' \
             '' \
             '  def install' \
-            '    bin.install "wranglerx"' \
+            '    bin.install "flyx"' \
             '  end' \
             '' \
             '  test do' \
-            '    assert_match version.to_s, shell_output("#{bin}/wranglerx version 2>&1")' \
+            '    assert_match version.to_s, shell_output("#{bin}/flyx version 2>&1")' \
             '  end' \
-            'end' > Formula/wranglerx.rb
+            'end' > Formula/flyx.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/wranglerx.rb
+          git add Formula/flyx.rb
           if git diff --cached --quiet; then
             echo "No formula changes"
             exit 0
           fi
 
-          git commit -m "wranglerx ${VERSION}"
+          git commit -m "flyx ${VERSION}"
           git push -u origin "$BRANCH"
 
           GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh pr create \
             --repo nantokaworks/homebrew-tap \
             --base main \
             --head "$BRANCH" \
-            --title "wranglerx ${VERSION}" \
+            --title "flyx ${VERSION}" \
             --body "Automated update from clix release ${TAG}"
 
           GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh pr merge "$BRANCH" \

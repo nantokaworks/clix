@@ -6,9 +6,9 @@
 
 **Automatically switch Cloudflare Wrangler accounts based on the directory you're in.**
 
-> **Prerequisite:** `wranglerx` is a wrapper around [`wrangler`](https://developers.cloudflare.com/workers/wrangler/). Install Wrangler first and register each Cloudflare token with `wranglerx auth add`.
+> **Prerequisite:** `wranglerx` is a wrapper around [`wrangler`](https://developers.cloudflare.com/workers/wrangler/). Install Wrangler first, sign in with `wrangler login` for each Cloudflare account, and snapshot each session into a wranglerx profile with `wranglerx x save <profile>`.
 
-If you work across personal, work, or client Cloudflare accounts, `wranglerx` lets each project carry the account context. It detects `account_id` from `wrangler.toml` or `wrangler.jsonc`, falls back to the GitHub remote owner for explicit mappings, and runs `wrangler` with the matching `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+If you work across personal, work, or client Cloudflare accounts, `wranglerx` lets each project carry the account context. It snapshots the OAuth tokens from `wrangler login`, detects `account_id` from `wrangler.toml` / `wrangler.jsonc` (or falls back to the GitHub remote owner / a configured default profile), refreshes expired tokens automatically, and runs `wrangler` with the matching `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
 ## Installation
 
@@ -59,42 +59,64 @@ Use `--dry-run` to inspect the selected account without running `wrangler`:
 wranglerx --dry-run deploy
 ```
 
-## Config
+## Profile Management
 
-Register accounts in `~/.config/wranglerx/accounts.yml` with `wranglerx auth`:
+Sign in with each Cloudflare account using vanilla `wrangler login`, then snapshot the resulting OAuth credentials into a named wranglerx profile:
 
 ```bash
-wranglerx auth add personal '${WRANGLERX_TOKEN_PERSONAL}' --account-id 1234abcd
-wranglerx auth add acme '${WRANGLERX_TOKEN_ACME}'
-wranglerx auth list
-wranglerx auth remove acme
+wrangler login                              # browser-based OAuth flow for account A
+wranglerx x save personal                # snapshot to "personal" profile
+
+wrangler logout
+wrangler login                              # browser-based OAuth flow for account B
+wranglerx x save work                    # snapshot to "work" profile
 ```
 
-The config file shape is:
+Subcommands:
+
+```bash
+wranglerx x list                         # show profiles, account_ids, expirations
+wranglerx x use <profile>                # set the default fallback profile
+wranglerx x bind <profile> <trigger>           # map a trigger (account_id) to a profile
+wranglerx x unbind <trigger>                   # delete a mapping
+wranglerx x remove <profile>             # delete a profile
+wranglerx x refresh <profile>            # force OAuth refresh
+wranglerx x whoami [<profile>]           # show profile details
+```
+
+Snapshots live in `~/.config/wranglerx/profiles.yml`:
 
 ```yaml
-accounts:
+default: personal
+profiles:
   personal:
-    api_token: ${WRANGLERX_TOKEN_PERSONAL}
+    access_token: <oauth-access-token>
+    refresh_token: <oauth-refresh-token>
+    expiration_time: 2026-05-03T13:34:56Z
     account_id: 1234abcd
-  acme:
-    api_token: ${WRANGLERX_TOKEN_ACME}
+    account_ids: [1234abcd]
+    scopes: [account:read, workers:write, ...]
+  work:
+    access_token: ...
+    ...
 mappings:
   1234abcd: personal
-  acme-org: acme
+  myorg: work
 ```
 
-Resolution order:
+`wranglerx login` and `wranglerx logout` continue to pass through to vanilla `wrangler` without touching the profile store, so the OAuth flow remains untouched.
 
-1. If `CLOUDFLARE_ACCOUNT_ID` is already set, `wranglerx` passes through to `wrangler` unchanged.
+## Resolution Order
+
+1. If `CLOUDFLARE_ACCOUNT_ID` is already set in the environment, `wranglerx` passes through to `wrangler` unchanged (CI workflows).
 2. Otherwise, `wranglerx` walks up from the current directory and reads top-level `account_id` from the nearest `wrangler.toml` or `wrangler.jsonc`.
-3. If no project account id is found, `wranglerx` falls back to the GitHub owner from `git remote get-url origin`.
-4. The trigger key is matched against `mappings`.
-5. For account-id triggers without a mapping, each registered token is checked against Cloudflare's accounts API.
+3. If no project account id is found, `wranglerx` tries the GitHub owner from `git remote get-url origin`.
+4. If neither source yields a hit, `wranglerx` falls back to the `default` profile (set via `wranglerx x use <profile>`).
+5. The trigger key is matched against `mappings`, then against each profile's `account_id` / `account_ids` for direct account-id triggers.
+
+If the resolved profile's `expiration_time` is past (or within 60 seconds), `wranglerx` automatically refreshes the OAuth token using `refresh_token` and rewrites `profiles.yml` before invoking `wrangler`.
 
 ## Env Vars
-
-`api_token` may be stored as plain text or as a strict whole-value environment reference such as `${WRANGLERX_TOKEN_PERSONAL}`. Missing environment variables are reported when the selected account is used.
 
 To disable update checks in the version banner:
 
@@ -102,10 +124,12 @@ To disable update checks in the version banner:
 export WRANGLERX_NO_UPDATE_CHECK=1
 ```
 
+In CI, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` directly — `wranglerx` will pass them through to `wrangler` without touching the profile store.
+
 ## Requirements
 
 - [`wrangler`](https://developers.cloudflare.com/workers/wrangler/) installed and available on `PATH`
-- At least one registered Cloudflare API token in `~/.config/wranglerx/accounts.yml`
+- At least one profile saved with `wrangler login` + `wranglerx x save <profile>`
 
 ## Build
 

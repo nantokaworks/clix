@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod x_cmd;
 
 use std::env;
 use std::process::{self, Command};
@@ -26,6 +27,12 @@ fn run() -> Result<(), error::Error> {
 
     if should_passthrough(&args) {
         return run_gh(cmd);
+    }
+
+    if let [first, rest @ ..] = args.as_slice() {
+        if first == "x" {
+            return x_cmd::run(rest);
+        }
     }
 
     let owner = git::get_remote_owner()?;

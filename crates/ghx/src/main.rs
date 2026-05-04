@@ -22,7 +22,12 @@ fn run() -> Result<(), error::Error> {
 
     if args.is_empty() {
         print_ghx_banner()?;
+        x_cmd::print_bare_hint();
         return run_gh(cmd);
+    }
+
+    if is_top_level_help(&args) {
+        return run_gh_then(cmd, x_cmd::print_extras_section);
     }
 
     if should_passthrough(&args) {
@@ -51,8 +56,21 @@ fn run_gh(cmd: Command) -> Result<(), error::Error> {
     })
 }
 
+fn run_gh_then(mut cmd: Command, trailer: fn()) -> Result<(), error::Error> {
+    let status = cmd.status().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => error::Error::GhNotFound,
+        _ => error::Error::ExecFailed(e.to_string()),
+    })?;
+    trailer();
+    process::exit(status.code().unwrap_or(1));
+}
+
 fn is_version_command(args: &[String]) -> bool {
     matches!(args, [first, ..] if matches!(first.as_str(), "--version" | "version"))
+}
+
+fn is_top_level_help(args: &[String]) -> bool {
+    matches!(args, [first] if matches!(first.as_str(), "--help" | "-h" | "help"))
 }
 
 fn should_passthrough(args: &[String]) -> bool {
@@ -138,7 +156,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_version_command, should_passthrough};
+    use super::{is_top_level_help, is_version_command, should_passthrough};
 
     #[test]
     fn no_args_is_not_passthrough() {
@@ -188,6 +206,24 @@ mod tests {
             vec!["repo".to_string(), "view".to_string()],
         ] {
             assert!(!should_passthrough(&args));
+        }
+    }
+
+    #[test]
+    fn detects_top_level_help_only() {
+        for args in [
+            vec!["--help".to_string()],
+            vec!["-h".to_string()],
+            vec!["help".to_string()],
+        ] {
+            assert!(is_top_level_help(&args), "{args:?}");
+        }
+        for args in [
+            vec![],
+            vec!["help".to_string(), "repo".to_string()],
+            vec!["pr".to_string(), "--help".to_string()],
+        ] {
+            assert!(!is_top_level_help(&args), "{args:?}");
         }
     }
 }

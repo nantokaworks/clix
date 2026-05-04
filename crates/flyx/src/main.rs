@@ -32,7 +32,12 @@ fn run() -> Result<(), error::Error> {
 
     if args.is_empty() {
         print_flyx_banner()?;
+        x_cmd::print_bare_hint();
         return run_fly(cmd);
+    }
+
+    if is_top_level_help(&args) {
+        return run_fly_then(cmd, x_cmd::print_extras_section);
     }
 
     if should_passthrough(&args) {
@@ -65,6 +70,19 @@ fn run_fly(cmd: Command) -> Result<(), error::Error> {
         ExecError::NotFound => error::Error::FlyNotFound,
         ExecError::Failed(msg) => error::Error::ExecFailed(msg),
     })
+}
+
+fn run_fly_then(mut cmd: Command, trailer: fn()) -> Result<(), error::Error> {
+    let status = cmd.status().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => error::Error::FlyNotFound,
+        _ => error::Error::ExecFailed(e.to_string()),
+    })?;
+    trailer();
+    process::exit(status.code().unwrap_or(1));
+}
+
+fn is_top_level_help(args: &[String]) -> bool {
+    matches!(args, [first] if matches!(first.as_str(), "--help" | "-h" | "help"))
 }
 
 fn resolve_trigger() -> Result<(String, TriggerSource), error::Error> {
@@ -317,7 +335,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_dry_run, is_version_command, should_passthrough};
+    use super::{is_dry_run, is_top_level_help, is_version_command, should_passthrough};
 
     #[test]
     fn detects_version_paths() {
@@ -359,6 +377,24 @@ mod tests {
             vec!["deploy".to_string()],
         ] {
             assert!(!should_passthrough(&args), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn detects_top_level_help_only() {
+        for args in [
+            vec!["--help".to_string()],
+            vec!["-h".to_string()],
+            vec!["help".to_string()],
+        ] {
+            assert!(is_top_level_help(&args), "{args:?}");
+        }
+        for args in [
+            vec![],
+            vec!["help".to_string(), "deploy".to_string()],
+            vec!["deploy".to_string(), "--help".to_string()],
+        ] {
+            assert!(!is_top_level_help(&args), "{args:?}");
         }
     }
 }

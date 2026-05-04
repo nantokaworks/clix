@@ -222,10 +222,18 @@ fn prompt_select_user(owner: &str, users: &[String]) -> Result<String, Error> {
     }
 }
 
-/// 選択結果を ~/.config/ghx/accounts.yml に保存する
+/// 選択結果を ~/.config/ghx/accounts.yml に保存する（ベストエフォート）
 fn save_account_mapping(owner: &str, user: &str) {
+    let _ = bind_owner_mapping(owner, user);
+}
+
+/// owner -> gh user マッピングを accounts.yml に書き込む
+pub fn bind_owner_mapping(owner: &str, user: &str) -> Result<(), Error> {
     let dir = ghx_config_dir();
-    let _ = fs::create_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| Error::GhxConfigWrite {
+        path: dir.clone(),
+        msg: e.to_string(),
+    })?;
     let path = dir.join("accounts.yml");
 
     let mut config = fs::read_to_string(&path)
@@ -236,9 +244,48 @@ fn save_account_mapping(owner: &str, user: &str) {
     let accounts = config.accounts.get_or_insert_with(HashMap::new);
     accounts.insert(owner.to_string(), user.to_string());
 
-    if let Ok(yaml) = serde_yml::to_string(&config) {
-        let _ = fs::write(&path, yaml);
+    let yaml = serde_yml::to_string(&config).map_err(|e| Error::GhxConfigWrite {
+        path: path.clone(),
+        msg: e.to_string(),
+    })?;
+    fs::write(&path, yaml).map_err(|e| Error::GhxConfigWrite {
+        path,
+        msg: e.to_string(),
+    })
+}
+
+/// owner のマッピングを削除する
+pub fn remove_owner_mapping(owner: &str) -> Result<(), Error> {
+    let path = ghx_config_dir().join("accounts.yml");
+    let mut config = fs::read_to_string(&path)
+        .ok()
+        .and_then(|c| serde_yml::from_str::<GhxConfig>(&c).ok())
+        .unwrap_or_default();
+
+    let removed = config
+        .accounts
+        .as_mut()
+        .map(|m| m.remove(owner).is_some())
+        .unwrap_or(false);
+    if !removed {
+        return Err(Error::UnknownMapping {
+            owner: owner.to_string(),
+        });
     }
+
+    let yaml = serde_yml::to_string(&config).map_err(|e| Error::GhxConfigWrite {
+        path: path.clone(),
+        msg: e.to_string(),
+    })?;
+    fs::write(&path, yaml).map_err(|e| Error::GhxConfigWrite {
+        path,
+        msg: e.to_string(),
+    })
+}
+
+/// 現在保存されている owner -> gh user マッピング一覧を返す
+pub fn read_owner_mappings() -> HashMap<String, String> {
+    load_ghx_config().accounts.unwrap_or_default()
 }
 
 fn should_prompt_for_account_selection(

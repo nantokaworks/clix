@@ -6,7 +6,7 @@
 
 **Automatically switch Cloudflare Wrangler accounts based on the directory you're in.**
 
-> **Prerequisite:** `wranglerx` is a wrapper around [`wrangler`](https://developers.cloudflare.com/workers/wrangler/). Install Wrangler first, sign in with `wrangler login` for each Cloudflare account, and snapshot each session into a wranglerx profile with `wranglerx auth save <profile>`.
+> **Prerequisite:** `wranglerx` is a wrapper around [`wrangler`](https://developers.cloudflare.com/workers/wrangler/). Install Wrangler first, sign in with `wrangler login` for each Cloudflare account, and snapshot each session into a wranglerx profile with `wranglerx x save <profile>`.
 
 If you work across personal, work, or client Cloudflare accounts, `wranglerx` lets each project carry the account context. It snapshots the OAuth tokens from `wrangler login`, detects `account_id` from `wrangler.toml` / `wrangler.jsonc` (or falls back to the GitHub remote owner / a configured default profile), refreshes expired tokens automatically, and runs `wrangler` with the matching `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
@@ -65,22 +65,23 @@ Sign in with each Cloudflare account using vanilla `wrangler login`, then snapsh
 
 ```bash
 wrangler login                              # browser-based OAuth flow for account A
-wranglerx auth save personal                # snapshot to "personal" profile
+wranglerx x save personal                # snapshot to "personal" profile
 
 wrangler logout
 wrangler login                              # browser-based OAuth flow for account B
-wranglerx auth save work                    # snapshot to "work" profile
+wranglerx x save work                    # snapshot to "work" profile
 ```
 
 Subcommands:
 
 ```bash
-wranglerx auth list                         # show profiles, account_ids, expirations
-wranglerx auth use <profile>                # set the default fallback profile
-wranglerx auth bind <profile> --account-id <id>   # manual mapping (multi-account tokens)
-wranglerx auth remove <profile>             # delete a profile
-wranglerx auth refresh <profile>            # force OAuth refresh
-wranglerx auth whoami [<profile>]           # show profile details
+wranglerx x list                         # show profiles, account_ids, expirations
+wranglerx x use <profile>                # set the default fallback profile
+wranglerx x bind <profile> <trigger>           # map a trigger (account_id) to a profile
+wranglerx x unbind <trigger>                   # delete a mapping
+wranglerx x remove <profile>             # delete a profile
+wranglerx x refresh <profile>            # force OAuth refresh
+wranglerx x whoami [<profile>]           # show profile details
 ```
 
 Snapshots live in `~/.config/wranglerx/profiles.yml`:
@@ -110,7 +111,7 @@ mappings:
 1. If `CLOUDFLARE_ACCOUNT_ID` is already set in the environment, `wranglerx` passes through to `wrangler` unchanged (CI workflows).
 2. Otherwise, `wranglerx` walks up from the current directory and reads top-level `account_id` from the nearest `wrangler.toml` or `wrangler.jsonc`.
 3. If no project account id is found, `wranglerx` tries the GitHub owner from `git remote get-url origin`.
-4. If neither source yields a hit, `wranglerx` falls back to the `default` profile (set via `wranglerx auth use <profile>`).
+4. If neither source yields a hit, `wranglerx` falls back to the `default` profile (set via `wranglerx x use <profile>`).
 5. The trigger key is matched against `mappings`, then against each profile's `account_id` / `account_ids` for direct account-id triggers.
 
 If the resolved profile's `expiration_time` is past (or within 60 seconds), `wranglerx` automatically refreshes the OAuth token using `refresh_token` and rewrites `profiles.yml` before invoking `wrangler`.
@@ -128,7 +129,7 @@ In CI, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` directly — `wran
 ## Requirements
 
 - [`wrangler`](https://developers.cloudflare.com/workers/wrangler/) installed and available on `PATH`
-- At least one profile saved with `wrangler login` + `wranglerx auth save <profile>`
+- At least one profile saved with `wrangler login` + `wranglerx x save <profile>`
 
 ## Build
 

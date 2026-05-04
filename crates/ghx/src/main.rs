@@ -1,12 +1,13 @@
 mod config;
 mod error;
+mod help;
 mod x_cmd;
 
 use std::env;
 use std::process::{self, Command};
 
 use clix_core::banner;
-use clix_core::exec::{ExecError, exec_replace};
+use clix_core::exec::{self, ExecError, exec_replace};
 use clix_core::git;
 use clix_core::update;
 use colored::Colorize;
@@ -22,7 +23,12 @@ fn run() -> Result<(), error::Error> {
 
     if args.is_empty() {
         print_ghx_banner()?;
+        exec::write_or_exit_on_pipe_close(help::BARE_HINT);
         return run_gh(cmd);
+    }
+
+    if help::is_top_level_help(&args) {
+        return run_gh_with_extras(cmd);
     }
 
     if should_passthrough(&args) {
@@ -45,10 +51,18 @@ fn run() -> Result<(), error::Error> {
 }
 
 fn run_gh(cmd: Command) -> Result<(), error::Error> {
-    exec_replace(cmd).map_err(|e| match e {
+    exec_replace(cmd).map_err(map_exec_err)
+}
+
+fn run_gh_with_extras(cmd: Command) -> Result<(), error::Error> {
+    exec::run_with_trailer(cmd, help::EXTRAS_SECTION).map_err(map_exec_err)
+}
+
+fn map_exec_err(e: ExecError) -> error::Error {
+    match e {
         ExecError::NotFound => error::Error::GhNotFound,
         ExecError::Failed(msg) => error::Error::ExecFailed(msg),
-    })
+    }
 }
 
 fn is_version_command(args: &[String]) -> bool {
@@ -190,4 +204,5 @@ mod tests {
             assert!(!should_passthrough(&args));
         }
     }
+
 }

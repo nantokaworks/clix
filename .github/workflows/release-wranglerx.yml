@@ -140,9 +140,6 @@ jobs:
 
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/nantokaworks/homebrew-tap.git" homebrew-tap
           cd homebrew-tap
-
-          BRANCH="wranglerx-${VERSION}"
-          git checkout -b "$BRANCH"
           mkdir -p Formula
 
           printf '%s\n' \
@@ -196,17 +193,14 @@ jobs:
           fi
 
           git commit -m "wranglerx ${VERSION}"
-          git push -u origin "$BRANCH"
 
-          GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh pr create \
-            --repo nantokaworks/homebrew-tap \
-            --base main \
-            --head "$BRANCH" \
-            --title "wranglerx ${VERSION}" \
-            --body "Automated update from clix release ${TAG}"
-
-          GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh pr merge "$BRANCH" \
-            --repo nantokaworks/homebrew-tap \
-            --auto \
-            --squash \
-            --delete-branch
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            if git push origin main; then
+              exit 0
+            fi
+            echo "push to main rejected (attempt ${attempt}); retrying"
+            sleep 5
+          done
+          echo "failed to push formula update to homebrew-tap main after retries" >&2
+          exit 1

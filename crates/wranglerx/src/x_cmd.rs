@@ -1,43 +1,12 @@
 use crate::cloudflare_api;
 use crate::config::{self, Profile, ProfilesConfig};
 use crate::error::Error;
+use crate::help;
 use crate::oauth;
 
-const USAGE: &str = "usage: wranglerx x list\n\
-                     \x20      wranglerx x bind <profile> <trigger>\n\
-                     \x20      wranglerx x unbind <trigger>\n\
-                     \x20      wranglerx x use <profile>\n\
-                     \x20      wranglerx x save <profile>\n\
-                     \x20      wranglerx x remove <profile>\n\
-                     \x20      wranglerx x refresh <profile>\n\
-                     \x20      wranglerx x whoami [<profile>]";
-
-pub fn print_usage() {
-    println!("{USAGE}");
-}
-
-pub fn print_extras_section() {
-    println!();
-    println!("wranglerx extras (wrapper-specific subcommands):");
-    println!("  wranglerx x list                       list registered profiles and trigger mappings");
-    println!("  wranglerx x bind <profile> <trigger>   map a trigger (account_id) to a profile");
-    println!("  wranglerx x unbind <trigger>           remove a trigger mapping");
-    println!("  wranglerx x use <profile>              set the default profile");
-    println!("  wranglerx x save <profile>             snapshot wrangler OAuth credentials into a profile");
-    println!("  wranglerx x remove <profile>           delete a profile");
-    println!("  wranglerx x refresh <profile>          refresh the profile's OAuth access token");
-    println!("  wranglerx x whoami [<profile>]         show profile details");
-    println!("  wranglerx x --help                     show this list");
-}
-
-pub fn print_bare_hint() {
-    println!();
-    println!("Tip: run `wranglerx x` for wranglerx-specific subcommands (profile / mapping management).");
-}
-
 pub fn run(args: &[String]) -> Result<(), Error> {
-    if args.is_empty() || is_help_arg(args) {
-        print_usage();
+    if args.is_empty() || help::is_x_help_arg(args) {
+        clix_core::exec::write_or_exit_on_pipe_close(help::X_USAGE);
         return Ok(());
     }
     match args {
@@ -50,12 +19,8 @@ pub fn run(args: &[String]) -> Result<(), Error> {
         [cmd, name] if cmd == "refresh" => refresh(name),
         [cmd] if cmd == "whoami" => whoami(None),
         [cmd, name] if cmd == "whoami" => whoami(Some(name)),
-        _ => Err(Error::InvalidAuthCommand(USAGE.to_string())),
+        _ => Err(Error::InvalidAuthCommand(help::X_USAGE.trim().to_string())),
     }
-}
-
-fn is_help_arg(args: &[String]) -> bool {
-    matches!(args, [first] if matches!(first.as_str(), "--help" | "-h"))
 }
 
 fn save(profile_name: &str) -> Result<(), Error> {

@@ -1,12 +1,13 @@
 mod config;
 mod error;
+mod help;
 mod x_cmd;
 
 use std::env;
 use std::process::{self, Command};
 
 use clix_core::banner;
-use clix_core::exec::{ExecError, exec_replace};
+use clix_core::exec::{self, ExecError, exec_replace};
 use clix_core::git;
 use clix_core::update;
 use colored::Colorize;
@@ -22,12 +23,12 @@ fn run() -> Result<(), error::Error> {
 
     if args.is_empty() {
         print_ghx_banner()?;
-        x_cmd::print_bare_hint();
+        exec::write_or_exit_on_pipe_close(help::BARE_HINT);
         return run_gh(cmd);
     }
 
-    if is_top_level_help(&args) {
-        return run_gh_then(cmd, x_cmd::print_extras_section);
+    if help::is_top_level_help(&args) {
+        return run_gh_with_extras(cmd);
     }
 
     if should_passthrough(&args) {
@@ -50,27 +51,22 @@ fn run() -> Result<(), error::Error> {
 }
 
 fn run_gh(cmd: Command) -> Result<(), error::Error> {
-    exec_replace(cmd).map_err(|e| match e {
-        ExecError::NotFound => error::Error::GhNotFound,
-        ExecError::Failed(msg) => error::Error::ExecFailed(msg),
-    })
+    exec_replace(cmd).map_err(map_exec_err)
 }
 
-fn run_gh_then(mut cmd: Command, trailer: fn()) -> Result<(), error::Error> {
-    let status = cmd.status().map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => error::Error::GhNotFound,
-        _ => error::Error::ExecFailed(e.to_string()),
-    })?;
-    trailer();
-    process::exit(status.code().unwrap_or(1));
+fn run_gh_with_extras(cmd: Command) -> Result<(), error::Error> {
+    exec::run_with_trailer(cmd, help::EXTRAS_SECTION).map_err(map_exec_err)
+}
+
+fn map_exec_err(e: ExecError) -> error::Error {
+    match e {
+        ExecError::NotFound => error::Error::GhNotFound,
+        ExecError::Failed(msg) => error::Error::ExecFailed(msg),
+    }
 }
 
 fn is_version_command(args: &[String]) -> bool {
     matches!(args, [first, ..] if matches!(first.as_str(), "--version" | "version"))
-}
-
-fn is_top_level_help(args: &[String]) -> bool {
-    matches!(args, [first] if matches!(first.as_str(), "--help" | "-h" | "help"))
 }
 
 fn should_passthrough(args: &[String]) -> bool {
@@ -156,7 +152,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_top_level_help, is_version_command, should_passthrough};
+    use super::{is_version_command, should_passthrough};
 
     #[test]
     fn no_args_is_not_passthrough() {
@@ -209,21 +205,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn detects_top_level_help_only() {
-        for args in [
-            vec!["--help".to_string()],
-            vec!["-h".to_string()],
-            vec!["help".to_string()],
-        ] {
-            assert!(is_top_level_help(&args), "{args:?}");
-        }
-        for args in [
-            vec![],
-            vec!["help".to_string(), "repo".to_string()],
-            vec!["pr".to_string(), "--help".to_string()],
-        ] {
-            assert!(!is_top_level_help(&args), "{args:?}");
-        }
-    }
 }

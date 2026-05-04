@@ -7,42 +7,11 @@ use crate::auto_import;
 use crate::config::{self, Profile};
 use crate::error::Error;
 use crate::fly_api;
-
-const USAGE: &str = "usage: flyx x list\n\
-                     \x20      flyx x bind <profile> <trigger>\n\
-                     \x20      flyx x unbind <trigger>\n\
-                     \x20      flyx x use <profile>\n\
-                     \x20      flyx x save <profile>\n\
-                     \x20      flyx x remove <profile>\n\
-                     \x20      flyx x import\n\
-                     \x20      flyx x whoami [<profile>]";
-
-pub fn print_usage() {
-    println!("{USAGE}");
-}
-
-pub fn print_extras_section() {
-    println!();
-    println!("flyx extras (wrapper-specific subcommands):");
-    println!("  flyx x list                       list registered profiles and trigger mappings");
-    println!("  flyx x bind <profile> <trigger>   map a trigger (org / app) to a profile");
-    println!("  flyx x unbind <trigger>           remove a trigger mapping");
-    println!("  flyx x use <profile>              set the default profile");
-    println!("  flyx x save <profile>             snapshot ~/.fly/config.yml into a profile");
-    println!("  flyx x remove <profile>           delete a profile");
-    println!("  flyx x import                     auto-import profiles from ~/.fly/");
-    println!("  flyx x whoami [<profile>]         show profile details");
-    println!("  flyx x --help                     show this list");
-}
-
-pub fn print_bare_hint() {
-    println!();
-    println!("Tip: run `flyx x` for flyx-specific subcommands (profile / mapping management).");
-}
+use crate::help;
 
 pub fn run(args: &[String]) -> Result<(), Error> {
-    if args.is_empty() || is_help_arg(args) {
-        print_usage();
+    if args.is_empty() || help::is_x_help_arg(args) {
+        clix_core::exec::write_or_exit_on_pipe_close(help::X_USAGE);
         return Ok(());
     }
     match args {
@@ -55,12 +24,8 @@ pub fn run(args: &[String]) -> Result<(), Error> {
         [cmd] if cmd == "import" => import(),
         [cmd] if cmd == "whoami" => whoami(None),
         [cmd, name] if cmd == "whoami" => whoami(Some(name)),
-        _ => Err(Error::InvalidAuthCommand(USAGE.to_string())),
+        _ => Err(Error::InvalidAuthCommand(help::X_USAGE.trim().to_string())),
     }
-}
-
-fn is_help_arg(args: &[String]) -> bool {
-    matches!(args, [first] if matches!(first.as_str(), "--help" | "-h"))
 }
 
 fn import() -> Result<(), Error> {

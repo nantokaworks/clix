@@ -2,22 +2,19 @@ mod auto_import;
 mod config;
 mod error;
 mod fly_api;
+mod help;
+mod resolve;
 mod x_cmd;
 
 use std::env;
 use std::process::{self, Command};
 
 use clix_core::banner;
-use clix_core::exec::{ExecError, exec_replace};
-use clix_core::git;
+use clix_core::exec::{self, ExecError, exec_replace};
 use clix_core::update;
 use colored::Colorize;
 
-use config::fly_toml::find_project_app;
-use config::{
-    Profile, ProfilesConfig, ResolvedProfile, TriggerSource, pick_profile_offline,
-    trigger_source_label,
-};
+use config::trigger_source_label;
 
 const FLY_AUTH_PASSTHROUGH: &[&str] = &["login", "logout", "signup"];
 
@@ -32,12 +29,12 @@ fn run() -> Result<(), error::Error> {
 
     if args.is_empty() {
         print_flyx_banner()?;
-        x_cmd::print_bare_hint();
+        exec::write_or_exit_on_pipe_close(help::BARE_HINT);
         return run_fly(cmd);
     }
 
-    if is_top_level_help(&args) {
-        return run_fly_then(cmd, x_cmd::print_extras_section);
+    if help::is_top_level_help(&args) {
+        return run_fly_with_extras(cmd);
     }
 
     if should_passthrough(&args) {
@@ -51,199 +48,33 @@ fn run() -> Result<(), error::Error> {
     }
 
     if is_dry_run(&args) {
-        return print_dry_run();
+        return resolve::print_dry_run();
     }
 
-    if has_fly_env_token() {
+    if resolve::has_fly_env_token() {
         return run_fly(cmd);
     }
 
-    let (trigger, source) = resolve_trigger()?;
-    let resolved = resolve_profile(&trigger, &source)?;
+    let (trigger, source) = resolve::resolve_trigger()?;
+    let resolved = resolve::resolve_profile(&trigger, &source)?;
     cmd.env("FLY_API_TOKEN", &resolved.access_token);
 
     run_fly(cmd)
 }
 
 fn run_fly(cmd: Command) -> Result<(), error::Error> {
-    exec_replace(cmd).map_err(|e| match e {
+    exec_replace(cmd).map_err(map_exec_err)
+}
+
+fn run_fly_with_extras(cmd: Command) -> Result<(), error::Error> {
+    exec::run_with_trailer(cmd, help::EXTRAS_SECTION).map_err(map_exec_err)
+}
+
+fn map_exec_err(e: ExecError) -> error::Error {
+    match e {
         ExecError::NotFound => error::Error::FlyNotFound,
         ExecError::Failed(msg) => error::Error::ExecFailed(msg),
-    })
-}
-
-fn run_fly_then(mut cmd: Command, trailer: fn()) -> Result<(), error::Error> {
-    let status = cmd.status().map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => error::Error::FlyNotFound,
-        _ => error::Error::ExecFailed(e.to_string()),
-    })?;
-    trailer();
-    process::exit(status.code().unwrap_or(1));
-}
-
-fn is_top_level_help(args: &[String]) -> bool {
-    matches!(args, [first] if matches!(first.as_str(), "--help" | "-h" | "help"))
-}
-
-fn resolve_trigger() -> Result<(String, TriggerSource), error::Error> {
-    if let Some(project) = find_project_app()? {
-        return Ok((project.app, TriggerSource::FlyToml(project.path)));
     }
-
-    match git::get_remote_owner() {
-        Ok(owner) => Ok((owner, TriggerSource::GitRemote)),
-        Err(_) => Ok((String::new(), TriggerSource::Default)),
-    }
-}
-
-fn resolve_profile(trigger: &str, source: &TriggerSource) -> Result<ResolvedProfile, error::Error> {
-    let mut cfg = config::read_config()?;
-
-    if cfg.profiles.is_empty() {
-        let result = auto_import::run(&mut cfg)?;
-        if !result.imported.is_empty() {
-            config::write_config(&cfg)?;
-            eprintln!(
-                "flyx: auto-imported {} profile(s) from ~/.fly/: {}",
-                result.imported.len(),
-                result.imported.join(", ")
-            );
-        }
-    }
-
-    if let Some((name, org)) = pick_profile_offline(&cfg, trigger, source)? {
-        let access_token = cfg
-            .profiles
-            .get(&name)
-            .map(|p| p.access_token.clone())
-            .ok_or_else(|| error::Error::ProfileNotFound {
-                profile: name.clone(),
-            })?;
-        return Ok(ResolvedProfile {
-            name,
-            org_slug: org,
-            access_token,
-            cached_mapping: false,
-        });
-    }
-
-    if matches!(source, TriggerSource::FlyToml(_)) {
-        if let Some(resolved) = resolve_via_api(&mut cfg, trigger)? {
-            config::write_config(&cfg)?;
-            return Ok(resolved);
-        }
-        return Err(error::Error::AppNotResolvable {
-            app: trigger.to_string(),
-        });
-    }
-
-    Err(error::Error::UnknownTrigger {
-        trigger: trigger.to_string(),
-        known: cfg.profiles.keys().cloned().collect(),
-    })
-}
-
-fn resolve_via_api(
-    cfg: &mut ProfilesConfig,
-    app: &str,
-) -> Result<Option<ResolvedProfile>, error::Error> {
-    let order = profile_lookup_order(cfg);
-    for name in order {
-        let token = match cfg.profiles.get(&name) {
-            Some(p) => p.access_token.clone(),
-            None => continue,
-        };
-        match fly_api::lookup_app_org(&token, app) {
-            Ok(Some(org_slug)) => {
-                if let Some(profile) = cfg.profiles.get_mut(&name) {
-                    register_org(profile, &org_slug);
-                }
-                cfg.mappings.insert(app.to_string(), name.clone());
-                let access_token = cfg
-                    .profiles
-                    .get(&name)
-                    .map(|p| p.access_token.clone())
-                    .unwrap_or(token);
-                return Ok(Some(ResolvedProfile {
-                    name,
-                    org_slug,
-                    access_token,
-                    cached_mapping: true,
-                }));
-            }
-            Ok(None) => continue,
-            Err(e) => {
-                eprintln!("flyx: warning: app lookup via profile \"{name}\" failed ({e})");
-                continue;
-            }
-        }
-    }
-    Ok(None)
-}
-
-fn profile_lookup_order(cfg: &ProfilesConfig) -> Vec<String> {
-    let mut order = Vec::with_capacity(cfg.profiles.len());
-    if let Some(default) = cfg.default.as_ref() {
-        if cfg.profiles.contains_key(default) {
-            order.push(default.clone());
-        }
-    }
-    for name in cfg.profiles.keys() {
-        if !order.iter().any(|n| n == name) {
-            order.push(name.clone());
-        }
-    }
-    order
-}
-
-fn register_org(profile: &mut Profile, org_slug: &str) {
-    if !profile.org_slugs.iter().any(|s| s == org_slug) {
-        profile.org_slugs.push(org_slug.to_string());
-    }
-    if profile.org_slug.is_none() {
-        profile.org_slug = Some(org_slug.to_string());
-    }
-}
-
-fn print_dry_run() -> Result<(), error::Error> {
-    if let Some((env_name, token)) = fly_env_token() {
-        eprintln!("flyx dry-run:");
-        eprintln!("  mode: pass-through");
-        eprintln!("  trigger source: env:{env_name}");
-        eprintln!("  token (masked): {}", mask_token(&token));
-        return Ok(());
-    }
-
-    let (trigger, source) = resolve_trigger()?;
-    let resolved = resolve_profile(&trigger, &source)?;
-    eprintln!("flyx dry-run:");
-    eprintln!("  profile: {}", resolved.name);
-    eprintln!("  org_slug: {}", resolved.org_slug);
-    eprintln!("  trigger source: {}", trigger_source_label(&source));
-    if resolved.cached_mapping {
-        eprintln!("  mapping: cached via Fly API lookup");
-    }
-    Ok(())
-}
-
-fn mask_token(token: &str) -> String {
-    if token.len() <= 12 {
-        return "*".repeat(token.len());
-    }
-    let head = &token[..6];
-    let tail = &token[token.len() - 4..];
-    format!("{head}…{tail}")
-}
-
-fn has_fly_env_token() -> bool {
-    env::var_os("FLY_API_TOKEN").is_some() || env::var_os("FLY_ACCESS_TOKEN").is_some()
-}
-
-fn fly_env_token() -> Option<(&'static str, String)> {
-    env::var("FLY_API_TOKEN")
-        .map(|token| ("FLY_API_TOKEN", token))
-        .or_else(|_| env::var("FLY_ACCESS_TOKEN").map(|token| ("FLY_ACCESS_TOKEN", token)))
-        .ok()
 }
 
 fn is_version_command(args: &[String]) -> bool {
@@ -277,13 +108,13 @@ fn print_flyx_banner() -> Result<(), error::Error> {
     ];
 
     let mut context_lines: Vec<String> = Vec::new();
-    if let Some((env_name, _)) = fly_env_token() {
+    if let Some((env_name, _)) = resolve::fly_env_token() {
         context_lines.push(format!(
             "{} {}",
             format!("{env_name}:").dimmed(),
             "(env override)".yellow()
         ));
-    } else if let Ok((trigger, source)) = resolve_trigger() {
+    } else if let Ok((trigger, source)) = resolve::resolve_trigger() {
         let trigger_label = if trigger.is_empty() {
             "(default)".to_string()
         } else {
@@ -335,7 +166,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_dry_run, is_top_level_help, is_version_command, should_passthrough};
+    use super::{is_dry_run, is_version_command, should_passthrough};
 
     #[test]
     fn detects_version_paths() {
@@ -377,24 +208,6 @@ mod tests {
             vec!["deploy".to_string()],
         ] {
             assert!(!should_passthrough(&args), "{args:?}");
-        }
-    }
-
-    #[test]
-    fn detects_top_level_help_only() {
-        for args in [
-            vec!["--help".to_string()],
-            vec!["-h".to_string()],
-            vec!["help".to_string()],
-        ] {
-            assert!(is_top_level_help(&args), "{args:?}");
-        }
-        for args in [
-            vec![],
-            vec!["help".to_string(), "deploy".to_string()],
-            vec!["deploy".to_string(), "--help".to_string()],
-        ] {
-            assert!(!is_top_level_help(&args), "{args:?}");
         }
     }
 }

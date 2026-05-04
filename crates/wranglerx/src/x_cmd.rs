@@ -14,6 +14,10 @@ const USAGE: &str = "usage: wranglerx x list\n\
 
 pub fn run(args: &[String]) -> Result<(), Error> {
     match args {
+        [] => {
+            println!("{USAGE}");
+            Ok(())
+        }
         [cmd] if cmd == "list" => list(),
         [cmd, name, trigger] if cmd == "bind" => bind(name, trigger),
         [cmd, trigger] if cmd == "unbind" => unbind(trigger),

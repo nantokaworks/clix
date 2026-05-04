@@ -127,6 +127,10 @@ jobs:
             checksums.txt
 
       - name: Update Homebrew formula
+        # HOMEBREW_TAP_TOKEN minimum scopes (fine-grained PAT on nantokaworks/homebrew-tap):
+        #   Contents:      Read & Write   (clone + push to main)
+        #   Metadata:      Read           (default)
+        #   Pull requests: No access      (direct-push flow; PR scope not needed)
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}

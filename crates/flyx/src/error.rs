@@ -10,21 +10,18 @@ pub enum Error {
     ConfigDirUnavailable,
     ConfigParseError { path: PathBuf, msg: String },
     ConfigWriteError { path: PathBuf, msg: String },
-    WranglerConfigParseError { path: PathBuf, msg: String },
-    LegacyAccountsConfig { path: PathBuf },
+    FlyTomlParseError { path: PathBuf, msg: String },
     ProfileNotFound { profile: String },
     NoDefaultProfile,
     UnknownTrigger { trigger: String, known: Vec<String> },
     UnknownMapping { trigger: String },
-    AmbiguousAccountId { profile: String, account_ids: Vec<String> },
-    MissingAccountId { profile: String },
-    WranglerCredentialsNotFound { searched: Vec<PathBuf> },
-    WranglerCredentialsParse { path: PathBuf, msg: String },
-    InvalidExpirationTime { value: String, msg: String },
-    OAuthRefreshFailed(String),
-    CloudflareApiFailed(String),
+    AppNotResolvable { app: String },
+    FlyConfigMissing { searched: Vec<PathBuf> },
+    FlyConfigParse { path: PathBuf, msg: String },
+    FlyTokenMissing { path: PathBuf },
+    FlyApiError { msg: String },
     InvalidAuthCommand(String),
-    WranglerNotFound,
+    FlyNotFound,
     ExecFailed(String),
 }
 
@@ -40,30 +37,24 @@ impl fmt::Display for Error {
             Error::ConfigWriteError { path, msg } => {
                 write!(f, "failed to write {}: {msg}", path.display())
             }
-            Error::WranglerConfigParseError { path, msg } => {
+            Error::FlyTomlParseError { path, msg } => {
                 write!(f, "failed to parse {}: {msg}", path.display())
             }
-            Error::LegacyAccountsConfig { path } => write!(
-                f,
-                "legacy accounts.yml detected at {}; this format is no longer supported. \
-                 Run `wrangler login` and then `wranglerx x save <profile>` to migrate.",
-                path.display()
-            ),
             Error::ProfileNotFound { profile } => {
                 write!(f, "profile \"{profile}\" is not registered")
             }
             Error::NoDefaultProfile => write!(
                 f,
                 "no profile could be resolved and no default is set; \
-                 register one with `wrangler login` + `wranglerx x save <profile>`, \
-                 then optionally `wranglerx x use <profile>`"
+                 register one with `fly auth login` + `flyx x save <profile>`, \
+                 then optionally `flyx x use <profile>`"
             ),
             Error::UnknownTrigger { trigger, known } => {
                 write!(
                     f,
                     "no profile mapped to \"{trigger}\"; \
-                     run: `wranglerx x bind <profile> {trigger}` \
-                     or `wranglerx x use <profile>` (default fallback)"
+                     run: `flyx x bind <profile> {trigger}` \
+                     or `flyx x use <profile>` (default fallback)"
                 )?;
                 if !known.is_empty() {
                     write!(f, "\n  registered profiles: {}", known.join(", "))?;
@@ -74,48 +65,33 @@ impl fmt::Display for Error {
                 f,
                 "no mapping found for \"{trigger}\""
             ),
-            Error::AmbiguousAccountId {
-                profile,
-                account_ids,
-            } => write!(
+            Error::AppNotResolvable { app } => write!(
                 f,
-                "profile \"{profile}\" can access multiple accounts ({}); \
-                 bind one with `wranglerx x bind {profile} <id>`",
-                account_ids.join(", ")
+                "could not resolve which profile owns app \"{app}\"; \
+                 bind manually with `flyx x bind <profile> {app}`"
             ),
-            Error::MissingAccountId { profile } => write!(
-                f,
-                "profile \"{profile}\" has no account_id; \
-                 run: `wranglerx x bind {profile} <id>`"
-            ),
-            Error::WranglerCredentialsNotFound { searched } => {
-                write!(
-                    f,
-                    "wrangler credentials file not found; run `wrangler login` first"
-                )?;
+            Error::FlyConfigMissing { searched } => {
+                write!(f, "fly config file not found; run `fly auth login` first")?;
                 for path in searched {
                     write!(f, "\n  searched: {}", path.display())?;
                 }
                 Ok(())
             }
-            Error::WranglerCredentialsParse { path, msg } => write!(
+            Error::FlyConfigParse { path, msg } => {
+                write!(f, "failed to parse fly config at {}: {msg}", path.display())
+            }
+            Error::FlyTokenMissing { path } => write!(
                 f,
-                "failed to parse wrangler credentials at {}: {msg}",
+                "no `access_token` found in {}; run `fly auth login` first",
                 path.display()
             ),
-            Error::InvalidExpirationTime { value, msg } => {
-                write!(f, "could not parse expiration_time \"{value}\": {msg}")
-            }
-            Error::OAuthRefreshFailed(msg) => write!(f, "OAuth refresh failed: {msg}"),
-            Error::CloudflareApiFailed(msg) => {
-                write!(f, "Cloudflare API request failed: {msg}")
-            }
+            Error::FlyApiError { msg } => write!(f, "Fly API request failed: {msg}"),
             Error::InvalidAuthCommand(msg) => write!(f, "{msg}"),
-            Error::WranglerNotFound => write!(
+            Error::FlyNotFound => write!(
                 f,
-                "wrangler not found\n  Check: wrangler --version\n  https://developers.cloudflare.com/workers/wrangler/"
+                "fly not found\n  Check: fly version\n  https://fly.io/docs/flyctl/install/"
             ),
-            Error::ExecFailed(msg) => write!(f, "wrangler execution failed: {msg}"),
+            Error::ExecFailed(msg) => write!(f, "fly execution failed: {msg}"),
         }
     }
 }

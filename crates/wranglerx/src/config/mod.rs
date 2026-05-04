@@ -6,23 +6,30 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::cloudflare_api;
 use crate::error::Error;
+use crate::oauth;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct WranglerxConfig {
+pub struct ProfilesConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub accounts: BTreeMap<String, AccountConfig>,
+    pub profiles: BTreeMap<String, Profile>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mappings: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct AccountConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_token: Option<String>,
+pub struct Profile {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expiration_time: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,23 +37,18 @@ pub enum TriggerSource {
     WranglerToml(PathBuf),
     WranglerJsonc(PathBuf),
     GitRemote,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenSource {
-    Account(String),
-    Env(String),
+    Default,
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolvedAccount {
+pub struct ResolvedProfile {
     pub name: String,
     pub account_id: String,
-    pub token: String,
-    pub token_source: TokenSource,
+    pub access_token: String,
+    pub refreshed: bool,
 }
 
-pub fn config_path() -> Result<PathBuf, Error> {
+pub fn config_dir() -> Result<PathBuf, Error> {
     let base = if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         PathBuf::from(xdg)
     } else {
@@ -54,14 +56,24 @@ pub fn config_path() -> Result<PathBuf, Error> {
             .ok_or(Error::ConfigDirUnavailable)?
             .join(".config")
     };
-    Ok(base.join("wranglerx").join("accounts.yml"))
+    Ok(base.join("wranglerx"))
 }
 
-pub fn read_config() -> Result<WranglerxConfig, Error> {
+pub fn config_path() -> Result<PathBuf, Error> {
+    Ok(config_dir()?.join("profiles.yml"))
+}
+
+pub fn legacy_accounts_path() -> Result<PathBuf, Error> {
+    Ok(config_dir()?.join("accounts.yml"))
+}
+
+pub fn read_config() -> Result<ProfilesConfig, Error> {
     let path = config_path()?;
     let content = match fs::read_to_string(&path) {
         Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(WranglerxConfig::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return maybe_legacy_or_empty();
+        }
         Err(e) => {
             return Err(Error::ConfigParseError {
                 path,
@@ -76,7 +88,15 @@ pub fn read_config() -> Result<WranglerxConfig, Error> {
     })
 }
 
-pub fn write_config(config: &WranglerxConfig) -> Result<(), Error> {
+fn maybe_legacy_or_empty() -> Result<ProfilesConfig, Error> {
+    let legacy = legacy_accounts_path()?;
+    if legacy.exists() {
+        return Err(Error::LegacyAccountsConfig { path: legacy });
+    }
+    Ok(ProfilesConfig::default())
+}
+
+pub fn write_config(config: &ProfilesConfig) -> Result<(), Error> {
     let path = config_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| Error::ConfigWriteError {
@@ -95,138 +115,140 @@ pub fn write_config(config: &WranglerxConfig) -> Result<(), Error> {
     })
 }
 
-pub fn resolve_account(trigger: &str, source: &TriggerSource) -> Result<ResolvedAccount, Error> {
-    let config = read_config()?;
-    resolve_account_from_config(&config, trigger, source)
-}
-
-fn resolve_account_from_config(
-    config: &WranglerxConfig,
+pub fn resolve_profile(
     trigger: &str,
     source: &TriggerSource,
-) -> Result<ResolvedAccount, Error> {
-    if let Some(account_name) = config.mappings.get(trigger) {
-        return resolve_named_account(config, account_name, trigger, source);
+) -> Result<ResolvedProfile, Error> {
+    let mut config = read_config()?;
+    let (profile_name, account_id) = pick_profile(&config, trigger, source)?;
+    let refreshed = ensure_fresh(&mut config, &profile_name)?;
+    if refreshed {
+        write_config(&config)?;
     }
-
-    if is_account_id_source(source) {
-        if let Some((name, _)) = config
-            .accounts
-            .iter()
-            .find(|(_, account)| account.account_id.as_deref() == Some(trigger))
-        {
-            return resolve_named_account(config, name, trigger, source);
-        }
-        return detect_by_cloudflare_account(config, trigger);
-    }
-
-    Err(unknown_trigger(config, trigger))
-}
-
-fn resolve_named_account(
-    config: &WranglerxConfig,
-    account_name: &str,
-    trigger: &str,
-    source: &TriggerSource,
-) -> Result<ResolvedAccount, Error> {
-    let account = config
-        .accounts
-        .get(account_name)
-        .ok_or_else(|| Error::AccountNotFound {
-            account: account_name.to_string(),
+    let profile = config
+        .profiles
+        .get(&profile_name)
+        .ok_or_else(|| Error::ProfileNotFound {
+            profile: profile_name.clone(),
         })?;
-    let (token, token_source) = resolve_token(account_name, account)?;
-    let account_id = account.account_id.clone().or_else(|| {
-        if is_account_id_source(source) {
-            Some(trigger.to_string())
-        } else {
-            None
-        }
-    });
-
-    Ok(ResolvedAccount {
-        name: account_name.to_string(),
-        account_id: account_id.ok_or_else(|| Error::MissingAccountId {
-            account: account_name.to_string(),
-        })?,
-        token,
-        token_source,
+    Ok(ResolvedProfile {
+        name: profile_name,
+        account_id,
+        access_token: profile.access_token.clone(),
+        refreshed,
     })
 }
 
-fn detect_by_cloudflare_account(
-    config: &WranglerxConfig,
-    account_id: &str,
-) -> Result<ResolvedAccount, Error> {
-    for (name, account) in &config.accounts {
-        let Ok((token, token_source)) = resolve_token(name, account) else {
-            continue;
+fn pick_profile(
+    config: &ProfilesConfig,
+    trigger: &str,
+    source: &TriggerSource,
+) -> Result<(String, String), Error> {
+    if let Some(name) = config.mappings.get(trigger) {
+        let account_id = if is_account_id_source(source) {
+            trigger.to_string()
+        } else {
+            primary_account_id(config, name)?
         };
-        if cloudflare_api::token_has_account(&token, account_id).unwrap_or(false) {
-            return Ok(ResolvedAccount {
-                name: name.clone(),
-                account_id: account_id.to_string(),
-                token,
-                token_source,
-            });
+        return Ok((name.clone(), account_id));
+    }
+
+    if is_account_id_source(source) {
+        if let Some((name, _)) = config.profiles.iter().find(|(_, profile)| {
+            profile
+                .account_id
+                .as_deref()
+                .is_some_and(|id| id == trigger)
+                || profile.account_ids.iter().any(|id| id == trigger)
+        }) {
+            return Ok((name.clone(), trigger.to_string()));
         }
     }
-    Err(unknown_trigger(config, account_id))
-}
 
-fn resolve_token(
-    account_name: &str,
-    account: &AccountConfig,
-) -> Result<(String, TokenSource), Error> {
-    let raw = account
-        .api_token
-        .as_ref()
-        .ok_or_else(|| Error::MissingToken {
-            account: account_name.to_string(),
-        })?;
-
-    if let Some(var) = env_reference(raw) {
-        let value = std::env::var(&var).map_err(|_| Error::MissingEnvToken {
-            account: account_name.to_string(),
-            var: var.clone(),
-        })?;
-        return Ok((value, TokenSource::Env(var)));
+    if matches!(source, TriggerSource::Default) {
+        let name = config
+            .default
+            .clone()
+            .ok_or(Error::NoDefaultProfile)?;
+        let account_id = primary_account_id(config, &name)?;
+        return Ok((name, account_id));
     }
 
-    Ok((raw.clone(), TokenSource::Account(account_name.to_string())))
+    Err(Error::UnknownTrigger {
+        trigger: trigger.to_string(),
+        known: config.profiles.keys().cloned().collect(),
+    })
 }
 
-fn env_reference(value: &str) -> Option<String> {
-    let inner = value.strip_prefix("${")?.strip_suffix('}')?;
-    if !inner.is_empty()
-        && inner
-            .bytes()
-            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
-    {
-        Some(inner.to_string())
-    } else {
-        None
+fn primary_account_id(config: &ProfilesConfig, profile_name: &str) -> Result<String, Error> {
+    let profile = config
+        .profiles
+        .get(profile_name)
+        .ok_or_else(|| Error::ProfileNotFound {
+            profile: profile_name.to_string(),
+        })?;
+    if let Some(id) = profile.account_id.as_ref() {
+        return Ok(id.clone());
+    }
+    match profile.account_ids.as_slice() {
+        [single] => Ok(single.clone()),
+        [] => Err(Error::MissingAccountId {
+            profile: profile_name.to_string(),
+        }),
+        many => Err(Error::AmbiguousAccountId {
+            profile: profile_name.to_string(),
+            account_ids: many.to_vec(),
+        }),
     }
 }
 
-fn is_account_id_source(source: &TriggerSource) -> bool {
+fn ensure_fresh(config: &mut ProfilesConfig, profile_name: &str) -> Result<bool, Error> {
+    let needs = {
+        let profile = config
+            .profiles
+            .get(profile_name)
+            .ok_or_else(|| Error::ProfileNotFound {
+                profile: profile_name.to_string(),
+            })?;
+        oauth::needs_refresh(&profile.expiration_time)?
+    };
+    if !needs {
+        return Ok(false);
+    }
+    let refresh_token = config
+        .profiles
+        .get(profile_name)
+        .map(|p| p.refresh_token.clone())
+        .ok_or_else(|| Error::ProfileNotFound {
+            profile: profile_name.to_string(),
+        })?;
+    let new_tokens = oauth::refresh(&refresh_token)?;
+    if let Some(profile) = config.profiles.get_mut(profile_name) {
+        profile.access_token = new_tokens.access_token;
+        profile.refresh_token = new_tokens.refresh_token;
+        profile.expiration_time = new_tokens.expiration_time;
+        if let Some(scopes) = new_tokens.scopes {
+            if !scopes.is_empty() {
+                profile.scopes = scopes;
+            }
+        }
+    }
+    Ok(true)
+}
+
+pub fn is_account_id_source(source: &TriggerSource) -> bool {
     matches!(
         source,
         TriggerSource::WranglerToml(_) | TriggerSource::WranglerJsonc(_)
     )
 }
 
-fn unknown_trigger(config: &WranglerxConfig, trigger: &str) -> Error {
-    Error::UnknownTrigger {
-        trigger: trigger.to_string(),
-        known: config.accounts.keys().cloned().collect(),
-    }
-}
-
-pub fn token_source_label(source: &TokenSource) -> String {
+pub fn trigger_source_label(source: &TriggerSource) -> String {
     match source {
-        TokenSource::Account(name) => format!("accounts.{name}"),
-        TokenSource::Env(var) => format!("${{{var}}}"),
+        TriggerSource::WranglerToml(path) => format!("wrangler.toml:{}", path.display()),
+        TriggerSource::WranglerJsonc(path) => format!("wrangler.jsonc:{}", path.display()),
+        TriggerSource::GitRemote => "git remote".to_string(),
+        TriggerSource::Default => "default profile".to_string(),
     }
 }
 

@@ -25,6 +25,14 @@ pub enum Error {
         mapped_user: String,
         known: Vec<String>,
     },
+    InvalidXCommand(String),
+    UnknownMapping {
+        owner: String,
+    },
+    GhxConfigWrite {
+        path: PathBuf,
+        msg: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -84,6 +92,13 @@ impl fmt::Display for Error {
                     write!(f, "\n  登録済みユーザー: {}", known.join(", "))?;
                 }
                 Ok(())
+            }
+            Error::InvalidXCommand(msg) => write!(f, "{msg}"),
+            Error::UnknownMapping { owner } => {
+                write!(f, "owner \"{owner}\" のマッピングは登録されていません")
+            }
+            Error::GhxConfigWrite { path, msg } => {
+                write!(f, "ghx の設定書き込みに失敗: {}: {msg}", path.display())
             }
         }
     }

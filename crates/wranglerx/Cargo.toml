@@ -17,6 +17,7 @@ colored = { workspace = true }
 ureq = { workspace = true }
 toml = { workspace = true }
 jsonc-parser = { workspace = true }
+time = { workspace = true, features = ["parsing", "formatting"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

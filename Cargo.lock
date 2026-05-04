@@ -206,6 +206,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "flyx"
+version = "0.1.0"
+dependencies = [
+ "clix-core",
+ "colored",
+ "dirs",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tempfile",
+ "time",
+ "toml",
+ "ureq",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -246,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "ghx"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "atty",
  "clix-core",

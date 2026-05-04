@@ -21,6 +21,11 @@ tasks:
     cmds:
       - cargo run -p wranglerx -- {{.CLI_ARGS}}
 
+  dev:flyx:
+    desc: flyx の開発用ビルド＆実行 (引数はそのまま渡される)
+    cmds:
+      - cargo run -p flyx -- {{.CLI_ARGS}}
+
   release:ghx:
     desc: origin/main を検証して ghx-v$VERSION タグを作成して push
     vars:

@@ -60,15 +60,29 @@ fn run() -> Result<(), error::Error> {
     }
 
     // Layer 7: explicit token in env — user signaled "don't manage this for me".
+    // `--account-id` flag is still honored: replay it as CLOUDFLARE_ACCOUNT_ID
+    // so the explicit account routes through wrangler.
     if resolve::has_cloudflare_env_token() {
+        if let Some(id) = parsed.account_id_override.as_deref() {
+            cmd.env("CLOUDFLARE_ACCOUNT_ID", id);
+        }
         return run_wrangler(cmd);
     }
 
-    // Layer 8: --profile <name> — inject just the access_token. Account_id is
-    // left to wrangler.toml / CLOUDFLARE_ACCOUNT_ID env / wrangler defaults.
+    // Layer 8: --profile <name> — inject the (refresh-aware) access_token.
+    // Account_id precedence: explicit `--account-id` flag > the profile's
+    // primary account_id (when unambiguous) > whatever wrangler resolves on
+    // its own (wrangler.toml / outer-shell CLOUDFLARE_ACCOUNT_ID env / etc).
     if let Some(profile_name) = parsed.profile_override.as_deref() {
-        let token = resolve::lookup_profile_token(profile_name)?;
-        cmd.env("CLOUDFLARE_API_TOKEN", token);
+        let lookup = resolve::lookup_profile(profile_name)?;
+        cmd.env("CLOUDFLARE_API_TOKEN", &lookup.access_token);
+        let account_id = parsed
+            .account_id_override
+            .clone()
+            .or(lookup.primary_account_id);
+        if let Some(id) = account_id {
+            cmd.env("CLOUDFLARE_ACCOUNT_ID", id);
+        }
         return run_wrangler(cmd);
     }
 
@@ -109,7 +123,7 @@ fn run_whoami(parsed: &args::ParsedArgs) -> Result<(), error::Error> {
     let token = if resolve::has_cloudflare_env_token() {
         None
     } else if let Some(name) = parsed.profile_override.as_deref() {
-        Some(resolve::lookup_profile_token(name)?)
+        Some(resolve::lookup_profile(name)?.access_token)
     } else if env::var_os("CLOUDFLARE_ACCOUNT_ID").is_some()
         && parsed.account_id_override.is_none()
     {

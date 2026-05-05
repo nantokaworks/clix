@@ -39,15 +39,51 @@ pub fn resolve_trigger(parsed: &ParsedArgs) -> Result<(String, TriggerSource), E
     }
 }
 
-/// Look up `name`'s saved access_token. Used by the `--profile <name>` override.
-pub fn lookup_profile_token(name: &str) -> Result<String, Error> {
-    let cfg = config::read_config()?;
-    cfg.profiles
-        .get(name)
-        .map(|p| p.access_token.clone())
-        .ok_or_else(|| Error::ProfileNotFound {
+/// Refresh-aware lookup of a saved profile by name. Used by the
+/// `--profile <name>` override and `wranglerx whoami`.
+///
+/// Goes through the same `oauth::ensure_fresh` path the default routing
+/// flow uses, so a stale `access_token` is rotated before being injected
+/// into the spawned `wrangler`. Without this, `wranglerx --profile work
+/// deploy` would fail with an expired token while `wranglerx deploy` (or
+/// `--account-id` lookup) on the same profile would succeed.
+pub fn lookup_profile(name: &str) -> Result<ProfileLookup, Error> {
+    let mut cfg = config::read_config()?;
+    if !cfg.profiles.contains_key(name) {
+        return Err(Error::ProfileNotFound {
             profile: name.to_string(),
-        })
+        });
+    }
+    let refreshed = config::ensure_fresh(&mut cfg, name)?;
+    if refreshed {
+        config::write_config(&cfg)?;
+    }
+    let profile = cfg
+        .profiles
+        .get(name)
+        .expect("profile presence checked above");
+    let primary_account_id = profile.account_id.clone().or_else(|| {
+        match profile.account_ids.as_slice() {
+            [single] => Some(single.clone()),
+            _ => None,
+        }
+    });
+    Ok(ProfileLookup {
+        access_token: profile.access_token.clone(),
+        primary_account_id,
+        refreshed,
+    })
+}
+
+/// Result of [`lookup_profile`]. `primary_account_id` is `None` when the
+/// profile has no `account_id` set and its `account_ids` array is empty
+/// or has > 1 entry — caller decides how to disambiguate (typically by
+/// honouring `--account-id` or letting wrangler's own resolution kick in).
+#[derive(Debug, Clone)]
+pub struct ProfileLookup {
+    pub access_token: String,
+    pub primary_account_id: Option<String>,
+    pub refreshed: bool,
 }
 
 pub fn resolve_profile(trigger: &str, source: &TriggerSource) -> Result<ResolvedProfile, Error> {
@@ -60,15 +96,28 @@ pub fn print_dry_run(parsed: &ParsedArgs) -> Result<(), Error> {
         eprintln!("  mode: pass-through");
         eprintln!("  trigger source: env:{env_name}");
         eprintln!("  token (masked): {}", mask_token(&value));
+        if let Some(id) = parsed.account_id_override.as_deref() {
+            eprintln!("  account_id (from --account-id): {id}");
+        }
         return Ok(());
     }
 
     if let Some(profile_name) = parsed.profile_override.as_deref() {
-        let token = lookup_profile_token(profile_name)?;
+        let lookup = lookup_profile(profile_name)?;
         eprintln!("wranglerx dry-run:");
         eprintln!("  profile: {profile_name}");
         eprintln!("  trigger source: --profile flag");
-        eprintln!("  token (masked): {}", mask_token(&token));
+        eprintln!("  token (masked): {}", mask_token(&lookup.access_token));
+        let injected_account_id = parsed
+            .account_id_override
+            .clone()
+            .or_else(|| lookup.primary_account_id.clone());
+        if let Some(id) = injected_account_id {
+            eprintln!("  account_id: {id}");
+        }
+        if lookup.refreshed {
+            eprintln!("  oauth: refreshed");
+        }
         return Ok(());
     }
 
@@ -195,7 +244,7 @@ account_id = "from-toml""#,
     }
 
     #[test]
-    fn lookup_profile_token_finds_saved_token() {
+    fn lookup_profile_returns_access_token_and_primary_account_id() {
         let xdg = TempDir::new().unwrap();
         let project = TempDir::new().unwrap();
         let _env = EnvGuard::isolated(xdg.path(), project.path());
@@ -205,17 +254,54 @@ account_id = "from-toml""#,
             .insert("work".to_string(), sample_profile());
         write_config(&cfg).unwrap();
 
-        let token = lookup_profile_token("work").unwrap();
-        assert_eq!(token, "access");
+        let lookup = lookup_profile("work").unwrap();
+        assert_eq!(lookup.access_token, "access");
+        assert_eq!(lookup.primary_account_id.as_deref(), Some("acct-1"));
+        // Token is far in the future (2999-…) — refresh must not fire.
+        assert!(!lookup.refreshed);
     }
 
     #[test]
-    fn lookup_profile_token_errors_for_unknown() {
+    fn lookup_profile_falls_back_to_single_account_ids_entry() {
         let xdg = TempDir::new().unwrap();
         let project = TempDir::new().unwrap();
         let _env = EnvGuard::isolated(xdg.path(), project.path());
 
-        let err = lookup_profile_token("nope").unwrap_err();
+        let mut profile = sample_profile();
+        profile.account_id = None;
+        profile.account_ids = vec!["only-one".to_string()];
+        let mut cfg = ProfilesConfig::default();
+        cfg.profiles.insert("work".to_string(), profile);
+        write_config(&cfg).unwrap();
+
+        let lookup = lookup_profile("work").unwrap();
+        assert_eq!(lookup.primary_account_id.as_deref(), Some("only-one"));
+    }
+
+    #[test]
+    fn lookup_profile_returns_none_when_account_ids_ambiguous() {
+        let xdg = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        let _env = EnvGuard::isolated(xdg.path(), project.path());
+
+        let mut profile = sample_profile();
+        profile.account_id = None;
+        profile.account_ids = vec!["a".to_string(), "b".to_string()];
+        let mut cfg = ProfilesConfig::default();
+        cfg.profiles.insert("work".to_string(), profile);
+        write_config(&cfg).unwrap();
+
+        let lookup = lookup_profile("work").unwrap();
+        assert!(lookup.primary_account_id.is_none());
+    }
+
+    #[test]
+    fn lookup_profile_errors_for_unknown() {
+        let xdg = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        let _env = EnvGuard::isolated(xdg.path(), project.path());
+
+        let err = lookup_profile("nope").unwrap_err();
         assert!(matches!(err, Error::ProfileNotFound { .. }));
     }
 

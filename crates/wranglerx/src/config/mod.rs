@@ -203,7 +203,7 @@ fn primary_account_id(config: &ProfilesConfig, profile_name: &str) -> Result<Str
     }
 }
 
-fn ensure_fresh(config: &mut ProfilesConfig, profile_name: &str) -> Result<bool, Error> {
+pub(crate) fn ensure_fresh(config: &mut ProfilesConfig, profile_name: &str) -> Result<bool, Error> {
     let needs = {
         let profile = config
             .profiles

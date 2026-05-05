@@ -14,7 +14,16 @@ use crate::x_token::root_macaroon;
 ///
 /// On fly's non-zero exit, propagates fly's exit code directly (no extra
 /// flyx-side message — flyctl already printed its own error).
+///
+/// `--help` / `-h` short-circuits the snapshot: fly prints usage and exits
+/// 0 without rotating any token, so re-snapshotting would just rewrite the
+/// same profile with stale data (and worse, surface a misleading "logged
+/// in" banner to a user who only asked for help).
 pub fn login(subcommand: &str, extra_args: &[String]) -> Result<(), Error> {
+    let help_mode = extra_args
+        .iter()
+        .any(|a| a == "--help" || a == "-h");
+
     let status = Command::new("fly")
         .args(["auth", subcommand])
         .args(extra_args)
@@ -29,6 +38,10 @@ pub fn login(subcommand: &str, extra_args: &[String]) -> Result<(), Error> {
 
     if !status.success() {
         process::exit(status.code().unwrap_or(1));
+    }
+
+    if help_mode {
+        return Ok(());
     }
 
     snapshot_current_token()

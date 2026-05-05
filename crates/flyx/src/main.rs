@@ -1,4 +1,5 @@
 mod args;
+mod auth;
 mod auto_import;
 mod config;
 mod error;
@@ -19,7 +20,7 @@ use colored::Colorize;
 
 use config::trigger_source_label;
 
-const FLY_AUTH_PASSTHROUGH: &[&str] = &["login", "logout", "signup"];
+const FLY_AUTH_PASSTHROUGH: &[&str] = &["logout"];
 
 fn run() -> Result<(), error::Error> {
     let raw: Vec<String> = env::args().skip(1).collect();
@@ -49,6 +50,13 @@ fn run() -> Result<(), error::Error> {
     if let [first, rest @ ..] = parsed.raw.as_slice() {
         if first == "x" {
             return x_cmd::run(rest);
+        }
+    }
+
+    if let [first, second, rest @ ..] = parsed.raw.as_slice() {
+        if first == "auth" && (second == "login" || second == "signup") {
+            let (name, extra) = auth::extract_optional_name(rest);
+            return auth::login(second, name, extra);
         }
     }
 
@@ -202,11 +210,20 @@ mod tests {
             vec!["--help".to_string()],
             vec!["-h".to_string()],
             vec!["help".to_string()],
-            vec!["auth".to_string(), "login".to_string()],
             vec!["auth".to_string(), "logout".to_string()],
-            vec!["auth".to_string(), "signup".to_string()],
         ] {
             assert!(should_passthrough(&args), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn auth_login_and_signup_do_not_passthrough() {
+        // login / signup are intercepted by auth::login for auto-snapshot.
+        for args in [
+            vec!["auth".to_string(), "login".to_string()],
+            vec!["auth".to_string(), "signup".to_string()],
+        ] {
+            assert!(!should_passthrough(&args), "{args:?}");
         }
     }
 

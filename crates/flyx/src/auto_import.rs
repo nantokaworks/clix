@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::config::{Profile, ProfilesConfig};
 use crate::error::Error;
 use crate::fly_cli;
+use crate::x_token::root_macaroon;
 
 #[derive(Deserialize)]
 struct FlyConfigYml {
@@ -133,6 +134,95 @@ fn pick_primary_for_import(slugs: &[String]) -> Option<String> {
             .cloned()
             .or_else(|| many.first().cloned()),
     }
+}
+
+/// Lazy auto-sync hook for management commands (list / whoami / refresh):
+/// scan `~/.fly/config*.yml`, and for any token whose root macaroon doesn't
+/// match an existing profile, snapshot it as a new profile via fly_cli.
+/// Errors per-file are logged and skipped (this is a best-effort enrichment,
+/// not a failure-worthy operation).
+pub(crate) fn sync_with_fly_dir(cfg: &mut ProfilesConfig) -> Result<(), Error> {
+    let files = discover_fly_config_files()?;
+    let mut imported = Vec::new();
+
+    for path in files {
+        let token = match read_fly_config_token(&path) {
+            Ok(Some(t)) => t,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!("flyx: warning: skipping {}: {e}", path.display());
+                continue;
+            }
+        };
+
+        if profile_with_root_exists(cfg, &token) {
+            continue;
+        }
+
+        let derived = profile_name_from_path(&path);
+        let name = unique_name(cfg, &derived);
+
+        eprintln!(
+            "flyx: discovered untracked config {} → snapshotting as \"{name}\"",
+            path.display()
+        );
+
+        let (email, org_slugs) = probe_token(&name, &token);
+        let primary_org = pick_primary_for_import(&org_slugs);
+
+        cfg.profiles.insert(
+            name.clone(),
+            Profile {
+                access_token: token,
+                email,
+                org_slug: primary_org.clone(),
+                org_slugs: org_slugs.clone(),
+            },
+        );
+
+        if cfg.default.is_none() {
+            cfg.default = Some(name.clone());
+        }
+
+        if let Some(slug) = primary_org.as_deref() {
+            cfg.mappings
+                .entry(slug.to_string())
+                .or_insert_with(|| name.clone());
+        }
+        for slug in &org_slugs {
+            cfg.mappings
+                .entry(slug.clone())
+                .or_insert_with(|| name.clone());
+        }
+
+        imported.push(name);
+    }
+
+    if !imported.is_empty() {
+        crate::config::write_config(cfg)?;
+    }
+
+    Ok(())
+}
+
+fn profile_with_root_exists(cfg: &ProfilesConfig, token: &str) -> bool {
+    let target = root_macaroon(token);
+    cfg.profiles
+        .values()
+        .any(|p| root_macaroon(&p.access_token) == target)
+}
+
+fn unique_name(cfg: &ProfilesConfig, candidate: &str) -> String {
+    if !cfg.profiles.contains_key(candidate) {
+        return candidate.to_string();
+    }
+    for i in 2.. {
+        let trial = format!("{candidate}-{i}");
+        if !cfg.profiles.contains_key(&trial) {
+            return trial;
+        }
+    }
+    candidate.to_string()
 }
 
 pub(crate) fn discover_fly_config_files() -> Result<Vec<PathBuf>, Error> {

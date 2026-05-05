@@ -23,6 +23,7 @@ pub enum Error {
     InvalidExpirationTime { value: String, msg: String },
     OAuthRefreshFailed(String),
     CloudflareApiFailed(String),
+    WranglerCliError { msg: String },
     InvalidAuthCommand(String),
     WranglerNotFound,
     ExecFailed(String),
@@ -110,6 +111,7 @@ impl fmt::Display for Error {
             Error::CloudflareApiFailed(msg) => {
                 write!(f, "Cloudflare API request failed: {msg}")
             }
+            Error::WranglerCliError { msg } => write!(f, "wrangler CLI invocation failed: {msg}"),
             Error::InvalidAuthCommand(msg) => write!(f, "{msg}"),
             Error::WranglerNotFound => write!(
                 f,

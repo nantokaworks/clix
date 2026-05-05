@@ -1,5 +1,4 @@
 use std::fs;
-use std::sync::{Mutex, MutexGuard};
 
 use tempfile::TempDir;
 
@@ -9,40 +8,7 @@ use super::{
     pick_profile, primary_account_id, read_config, trigger_source_label, write_config,
 };
 use crate::error::Error;
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct EnvGuard {
-    _lock: MutexGuard<'static, ()>,
-    old_xdg_config_home: Option<String>,
-}
-
-impl EnvGuard {
-    fn set(xdg_config_home: &std::path::Path) -> Self {
-        let lock = ENV_LOCK.lock().unwrap();
-        let old_xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();
-
-        unsafe {
-            std::env::set_var("XDG_CONFIG_HOME", xdg_config_home);
-        }
-
-        Self {
-            _lock: lock,
-            old_xdg_config_home,
-        }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        unsafe {
-            match &self.old_xdg_config_home {
-                Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
-                None => std::env::remove_var("XDG_CONFIG_HOME"),
-            }
-        }
-    }
-}
+use crate::test_support::EnvGuard;
 
 fn sample_profile() -> Profile {
     Profile {
@@ -58,7 +24,7 @@ fn sample_profile() -> Profile {
 #[test]
 fn config_round_trip_preserves_profiles_and_mappings() {
     let dir = TempDir::new().unwrap();
-    let _env = EnvGuard::set(dir.path());
+    let _env = EnvGuard::set_xdg(dir.path());
 
     let mut cfg = ProfilesConfig::default();
     cfg.default = Some("personal".to_string());
@@ -81,7 +47,7 @@ fn config_round_trip_preserves_profiles_and_mappings() {
 #[test]
 fn missing_config_returns_default() {
     let dir = TempDir::new().unwrap();
-    let _env = EnvGuard::set(dir.path());
+    let _env = EnvGuard::set_xdg(dir.path());
 
     let cfg = read_config().unwrap();
     assert!(cfg.profiles.is_empty());
@@ -92,7 +58,7 @@ fn missing_config_returns_default() {
 #[test]
 fn legacy_accounts_yml_triggers_migration_error() {
     let dir = TempDir::new().unwrap();
-    let _env = EnvGuard::set(dir.path());
+    let _env = EnvGuard::set_xdg(dir.path());
 
     let path = legacy_accounts_path().unwrap();
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -155,6 +121,32 @@ fn pick_profile_via_account_ids_array_without_mapping() {
         &TriggerSource::WranglerToml("wrangler.toml".into()),
     )
     .unwrap();
+    assert_eq!(name, "personal");
+    assert_eq!(account_id, "acct-2");
+}
+
+#[test]
+fn pick_profile_via_explicit_account_id_flag_uses_trigger() {
+    let mut cfg = ProfilesConfig::default();
+    cfg.profiles
+        .insert("personal".to_string(), sample_profile());
+
+    let (name, account_id) =
+        pick_profile(&cfg, "acct-1", &TriggerSource::ExplicitAccountId).unwrap();
+    assert_eq!(name, "personal");
+    assert_eq!(account_id, "acct-1");
+}
+
+#[test]
+fn pick_profile_via_explicit_account_id_falls_back_to_account_ids_array() {
+    let mut profile = sample_profile();
+    profile.account_id = None;
+    profile.account_ids = vec!["acct-1".to_string(), "acct-2".to_string()];
+    let mut cfg = ProfilesConfig::default();
+    cfg.profiles.insert("personal".to_string(), profile);
+
+    let (name, account_id) =
+        pick_profile(&cfg, "acct-2", &TriggerSource::ExplicitAccountId).unwrap();
     assert_eq!(name, "personal");
     assert_eq!(account_id, "acct-2");
 }
@@ -255,10 +247,15 @@ fn trigger_source_labels() {
         trigger_source_label(&TriggerSource::Default),
         "default profile"
     );
+    assert_eq!(
+        trigger_source_label(&TriggerSource::ExplicitAccountId),
+        "--account-id flag"
+    );
 }
 
 #[test]
 fn account_id_source_predicate() {
+    assert!(is_account_id_source(&TriggerSource::ExplicitAccountId));
     assert!(is_account_id_source(&TriggerSource::WranglerToml(
         "x".into()
     )));
@@ -272,7 +269,7 @@ fn account_id_source_predicate() {
 #[test]
 fn config_path_under_xdg_dir() {
     let dir = TempDir::new().unwrap();
-    let _env = EnvGuard::set(dir.path());
+    let _env = EnvGuard::set_xdg(dir.path());
     let p = config_path().unwrap();
     assert!(p.ends_with("wranglerx/profiles.yml"));
 }

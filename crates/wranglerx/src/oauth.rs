@@ -6,13 +6,20 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::error::Error;
+use crate::wrangler_cli::{self, AuthTokenOutput};
 
-// Hardcoded wrangler OAuth client_id and token endpoint, taken from the public
-// wrangler source. If wrangler rotates these, refresh will fail and the user
-// should use Plan B (`wrangler login` + `wranglerx x save`) to refresh
-// indirectly via wrangler itself.
+// Legacy fallback only — the happy path delegates to `wrangler auth token
+// --json` (see `refresh`). These constants stay so headless callers can opt
+// back in via `WRANGLERX_LEGACY_REFRESH=1`. See
+// design/wranglerx/phase-3-oauth-refresh-decision.md (id c2yMJxLMtLEqiopyu9KDt).
 const WRANGLER_OAUTH_CLIENT_ID: &str = "54d11594-84e4-41aa-b438-e81b8fa78ee7";
 const WRANGLER_OAUTH_TOKEN_URL: &str = "https://dash.cloudflare.com/oauth2/token";
+const LEGACY_REFRESH_ENV: &str = "WRANGLERX_LEGACY_REFRESH";
+
+/// Conservative expiration when `wrangler auth token --json` omits `expires_in`.
+/// Picked to keep `ensure_fresh` from refresh-looping; wrangler will refresh
+/// again silently on the next call if its real expiry comes sooner.
+const DEFAULT_DELEGATE_EXPIRES_IN_SECS: i64 = 3600;
 
 const REFRESH_THRESHOLD_SECS: i64 = 60;
 
@@ -102,7 +109,51 @@ pub struct RefreshedTokens {
     pub scopes: Option<Vec<String>>,
 }
 
+/// Refresh wranglerx's cached OAuth access_token.
+///
+/// Default path: delegate to `wrangler auth token --json`. Wrangler
+/// refreshes silently when its own cached refresh_token is still valid, so we
+/// avoid the hardcoded Cloudflare OAuth `client_id` on the happy path.
+///
+/// Falls back to the in-process refresh (legacy POST to
+/// `dash.cloudflare.com/oauth2/token`) when:
+/// - `WRANGLERX_LEGACY_REFRESH=1` is set (explicit opt-out for headless/CI), or
+/// - `wrangler auth token` is unavailable, errors, or returns a non-OAuth
+///   credential type (e.g. `api_token` from a `CLOUDFLARE_API_TOKEN` env var).
 pub fn refresh(refresh_token: &str) -> Result<RefreshedTokens, Error> {
+    if use_legacy_refresh() {
+        return refresh_legacy(refresh_token);
+    }
+    match wrangler_cli::auth_token() {
+        Ok(out) if out.kind == "oauth" => into_refreshed_tokens(out, refresh_token),
+        _ => refresh_legacy(refresh_token),
+    }
+}
+
+fn use_legacy_refresh() -> bool {
+    std::env::var(LEGACY_REFRESH_ENV).as_deref() == Ok("1")
+}
+
+fn into_refreshed_tokens(
+    out: AuthTokenOutput,
+    refresh_token: &str,
+) -> Result<RefreshedTokens, Error> {
+    let expires_in = out.expires_in.unwrap_or(DEFAULT_DELEGATE_EXPIRES_IN_SECS);
+    let new_exp = OffsetDateTime::now_utc() + time::Duration::seconds(expires_in);
+    let exp_str = new_exp
+        .format(&Rfc3339)
+        .map_err(|e| Error::OAuthRefreshFailed(format!("could not format expiration: {e}")))?;
+    Ok(RefreshedTokens {
+        access_token: out.token,
+        // wrangler doesn't expose the refresh_token via `auth token`; preserve
+        // ours so the next `ensure_fresh` cycle can still fall back to legacy.
+        refresh_token: refresh_token.to_string(),
+        expiration_time: exp_str,
+        scopes: None,
+    })
+}
+
+fn refresh_legacy(refresh_token: &str) -> Result<RefreshedTokens, Error> {
     refresh_at(WRANGLER_OAUTH_TOKEN_URL, refresh_token)
 }
 
@@ -189,5 +240,52 @@ mod tests {
     #[test]
     fn form_encode_escapes_reserved_chars() {
         assert_eq!(form_encode("a b/c"), "a%20b%2Fc");
+    }
+
+    #[test]
+    fn into_refreshed_tokens_preserves_refresh_token_when_delegate_omits_it() {
+        let out = AuthTokenOutput {
+            kind: "oauth".to_string(),
+            token: "fresh-access".to_string(),
+            expires_in: Some(900),
+        };
+        let refreshed = into_refreshed_tokens(out, "original-refresh").unwrap();
+        assert_eq!(refreshed.access_token, "fresh-access");
+        assert_eq!(refreshed.refresh_token, "original-refresh");
+        assert!(refreshed.scopes.is_none());
+    }
+
+    #[test]
+    fn into_refreshed_tokens_uses_default_when_expires_in_missing() {
+        let out = AuthTokenOutput {
+            kind: "oauth".to_string(),
+            token: "t".to_string(),
+            expires_in: None,
+        };
+        let refreshed = into_refreshed_tokens(out, "r").unwrap();
+        let exp = parse_expiration(&refreshed.expiration_time).unwrap();
+        let now = OffsetDateTime::now_utc();
+        let delta_secs = (exp - now).whole_seconds();
+        // Expect ~DEFAULT_DELEGATE_EXPIRES_IN_SECS in the future, allowing
+        // a few seconds of drift for the test runtime.
+        assert!(
+            delta_secs > DEFAULT_DELEGATE_EXPIRES_IN_SECS - 30
+                && delta_secs <= DEFAULT_DELEGATE_EXPIRES_IN_SECS,
+            "delta_secs = {delta_secs}"
+        );
+    }
+
+    #[test]
+    fn use_legacy_refresh_reads_env() {
+        use crate::test_support::EnvGuard;
+        use std::path::PathBuf;
+        let dir = PathBuf::from("/tmp");
+        let _guard = EnvGuard::set_xdg(&dir);
+        unsafe { std::env::set_var(LEGACY_REFRESH_ENV, "1") };
+        assert!(use_legacy_refresh());
+        unsafe { std::env::set_var(LEGACY_REFRESH_ENV, "0") };
+        assert!(!use_legacy_refresh());
+        unsafe { std::env::remove_var(LEGACY_REFRESH_ENV) };
+        assert!(!use_legacy_refresh());
     }
 }

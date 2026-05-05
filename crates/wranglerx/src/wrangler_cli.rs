@@ -31,6 +31,33 @@ pub fn whoami(token: Option<&str>) -> Result<WhoamiOutput, Error> {
     parse_whoami(&stdout)
 }
 
+/// Subset of `wrangler auth token --json` output (Wrangler v4+, 2025-12-18).
+/// `kind` is `"oauth"` for cached OAuth credentials, `"api_token"` when
+/// `CLOUDFLARE_API_TOKEN` is set, `"api_key"` for the legacy email+key path.
+#[derive(Debug, Deserialize)]
+pub struct AuthTokenOutput {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub token: String,
+    #[serde(default)]
+    pub expires_in: Option<i64>,
+}
+
+/// Calls `wrangler auth token --json`. With OAuth credentials cached on disk
+/// (via `wrangler login`), wrangler refreshes silently when the access_token
+/// is expired and returns a fresh one — so this is the supported path for
+/// avoiding our hardcoded OAuth `client_id`.
+pub fn auth_token() -> Result<AuthTokenOutput, Error> {
+    let stdout = run_wrangler(None, &["auth", "token", "--json"])?;
+    parse_auth_token(&stdout)
+}
+
+fn parse_auth_token(json: &str) -> Result<AuthTokenOutput, Error> {
+    serde_json::from_str(json).map_err(|e| Error::WranglerCliError {
+        msg: format!("could not parse `wrangler auth token --json`: {e}"),
+    })
+}
+
 fn run_wrangler(token: Option<&str>, args: &[&str]) -> Result<String, Error> {
     let mut cmd = Command::new("wrangler");
     if let Some(t) = token {
@@ -133,5 +160,23 @@ mod tests {
         assert!(parsed.email.is_none());
         assert!(parsed.accounts.is_empty());
         assert!(parsed.token_permissions.is_none());
+    }
+
+    #[test]
+    fn parse_auth_token_oauth() {
+        let json = r#"{"type":"oauth","token":"abc","expires_in":3600}"#;
+        let parsed = parse_auth_token(json).unwrap();
+        assert_eq!(parsed.kind, "oauth");
+        assert_eq!(parsed.token, "abc");
+        assert_eq!(parsed.expires_in, Some(3600));
+    }
+
+    #[test]
+    fn parse_auth_token_api_token_without_expires_in() {
+        let json = r#"{"type":"api_token","token":"xyz"}"#;
+        let parsed = parse_auth_token(json).unwrap();
+        assert_eq!(parsed.kind, "api_token");
+        assert_eq!(parsed.token, "xyz");
+        assert!(parsed.expires_in.is_none());
     }
 }

@@ -104,7 +104,7 @@ mappings:
   myorg: work
 ```
 
-`wranglerx login` and `wranglerx logout` continue to pass through to vanilla `wrangler` without touching the profile store, so the OAuth flow remains untouched.
+`wranglerx login` runs `wrangler login` with stdio inherited (so the browser OAuth flow works) and, on success, automatically snapshots the freshly issued credentials into a wranglerx profile (default name: `default`, reused if the same `refresh_token` is already on file). Pass `--skip-snapshot` to opt out (useful for CI/headless setups). `wranglerx login --help` short-circuits the snapshot. `wranglerx logout` continues to pass through to vanilla `wrangler` without touching the profile store.
 
 ## Resolution Order
 
@@ -114,7 +114,7 @@ mappings:
 4. If neither source yields a hit, `wranglerx` falls back to the `default` profile (set via `wranglerx x use <profile>`).
 5. The trigger key is matched against `mappings`, then against each profile's `account_id` / `account_ids` for direct account-id triggers.
 
-If the resolved profile's `expiration_time` is past (or within 60 seconds), `wranglerx` automatically refreshes the OAuth token using `refresh_token` and rewrites `profiles.yml` before invoking `wrangler`.
+If the resolved profile's `expiration_time` is past (or within 60 seconds), `wranglerx` automatically refreshes the OAuth token by delegating to `wrangler auth token --json` (Wrangler v4+, no hardcoded OAuth `client_id` involved) and rewrites `profiles.yml` before invoking `wrangler`. Set `WRANGLERX_LEGACY_REFRESH=1` to opt back into the in-process refresh path (POST to `dash.cloudflare.com/oauth2/token`) for headless setups without `wrangler` on `PATH`.
 
 ## Env Vars
 

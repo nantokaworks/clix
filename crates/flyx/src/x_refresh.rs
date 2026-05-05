@@ -87,15 +87,19 @@ pub(crate) fn refresh(profile_name: Option<&str>) -> Result<(), Error> {
             profile.org_slug = new_primary.clone();
         }
 
+        // Org slugs aren't globally unique on Fly (every account gets a
+        // "personal"), so first-write-wins is the right behavior — we keep
+        // whichever profile claimed the slug first.
         for slug in &org_slugs {
             cfg.mappings
                 .entry(slug.clone())
                 .or_insert_with(|| name.clone());
         }
+        // App names ARE globally unique on Fly. The live `fly apps list`
+        // is the source of truth, so refresh must overwrite stale entries
+        // — otherwise a misrouted app stays misrouted forever.
         for app in &apps {
-            cfg.mappings
-                .entry(app.name.clone())
-                .or_insert_with(|| name.clone());
+            cfg.mappings.insert(app.name.clone(), name.clone());
         }
 
         let primary_label = profile.org_slug.as_deref().unwrap_or("(unbound)");

@@ -89,10 +89,10 @@ fn snapshot_current_token() -> Result<(), Error> {
             .entry(slug.clone())
             .or_insert_with(|| name.clone());
     }
+    // App names are globally unique on Fly, so a fresh login is authoritative
+    // for the apps it owns — overwrite any stale cached mapping.
     for app in &apps {
-        cfg.mappings
-            .entry(app.name.clone())
-            .or_insert_with(|| name.clone());
+        cfg.mappings.insert(app.name.clone(), name.clone());
     }
 
     config::write_config(&cfg)?;

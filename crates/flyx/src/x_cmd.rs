@@ -94,10 +94,11 @@ fn save_token(profile_name: &str, token: &str) -> Result<(), Error> {
             .entry(slug.clone())
             .or_insert_with(|| profile_name.to_string());
     }
+    // App names are globally unique on Fly — a fresh save-token is the
+    // source of truth for the apps it can see, so stale entries are
+    // overwritten.
     for app in &apps {
-        cfg.mappings
-            .entry(app.name.clone())
-            .or_insert_with(|| profile_name.to_string());
+        cfg.mappings.insert(app.name.clone(), profile_name.to_string());
     }
 
     config::write_config(&cfg)?;

@@ -19,7 +19,7 @@ pub enum Error {
     FlyConfigMissing { searched: Vec<PathBuf> },
     FlyConfigParse { path: PathBuf, msg: String },
     FlyTokenMissing { path: PathBuf },
-    FlyApiError { msg: String },
+    FlyCliError { msg: String },
     InvalidAuthCommand(String),
     FlyNotFound,
     ExecFailed(String),
@@ -85,7 +85,7 @@ impl fmt::Display for Error {
                 "no `access_token` found in {}; run `fly auth login` first",
                 path.display()
             ),
-            Error::FlyApiError { msg } => write!(f, "Fly API request failed: {msg}"),
+            Error::FlyCliError { msg } => write!(f, "fly CLI invocation failed: {msg}"),
             Error::InvalidAuthCommand(msg) => write!(f, "{msg}"),
             Error::FlyNotFound => write!(
                 f,

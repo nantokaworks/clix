@@ -9,7 +9,7 @@ use crate::config::{
     trigger_source_label,
 };
 use crate::error::Error;
-use crate::fly_api;
+use crate::fly_cli;
 
 pub fn resolve_trigger() -> Result<(String, TriggerSource), Error> {
     if let Some(project) = find_project_app()? {
@@ -76,7 +76,7 @@ fn resolve_via_api(cfg: &mut ProfilesConfig, app: &str) -> Result<Option<Resolve
             Some(p) => p.access_token.clone(),
             None => continue,
         };
-        match fly_api::lookup_app_org(&token, app) {
+        match fly_cli::lookup_app(&token, app) {
             Ok(Some(org_slug)) => {
                 if let Some(profile) = cfg.profiles.get_mut(&name) {
                     register_org(profile, &org_slug);

@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::auto_import;
 use crate::config::{self, Profile};
 use crate::error::Error;
-use crate::fly_api;
+use crate::fly_cli;
 use crate::help;
 use crate::x_refresh;
 
@@ -96,34 +96,33 @@ fn candidate_fly_config_paths() -> Result<Vec<PathBuf>, Error> {
 fn save(profile_name: &str) -> Result<(), Error> {
     let (cfg_path, token) = read_fly_access_token()?;
 
-    let mut viewer = match fly_api::fetch_viewer(&token) {
-        Ok(v) => v,
+    let email = match fly_cli::auth_whoami(&token) {
+        Ok(e) => e,
         Err(e) => {
             eprintln!(
-                "flyx: warning: could not fetch viewer info ({e}); saving without org details"
+                "flyx: warning: could not fetch viewer info ({e}); saving without email"
             );
-            fly_api::ViewerInfo {
-                email: None,
-                org_slugs: Vec::new(),
-            }
+            None
         }
     };
 
-    // Macaroon (`fm2_*`) tokens often deny GraphQL org reads. Harvest the org
-    // slugs Fly has already cached locally under `wire_guard_state` as a backup.
-    if let Ok(summary) = auto_import::read_fly_config_summary(&cfg_path) {
-        auto_import::merge_org_slugs(&mut viewer.org_slugs, &summary.wire_guard_orgs);
-    }
+    let org_slugs: Vec<String> = match fly_cli::orgs_list(&token) {
+        Ok(map) => map.into_keys().collect(),
+        Err(e) => {
+            eprintln!("flyx: warning: could not list orgs ({e}); saving without org details");
+            Vec::new()
+        }
+    };
 
     let mut cfg = config::read_config()?;
 
-    let primary_org = x_refresh::pick_primary(&viewer.org_slugs);
+    let primary_org = x_refresh::pick_primary(&org_slugs);
 
     let profile = Profile {
         access_token: token,
-        email: viewer.email.clone(),
+        email: email.clone(),
         org_slug: primary_org.clone(),
-        org_slugs: viewer.org_slugs.clone(),
+        org_slugs: org_slugs.clone(),
     };
 
     cfg.profiles.insert(profile_name.to_string(), profile);
@@ -145,10 +144,10 @@ fn save(profile_name: &str) -> Result<(), Error> {
         cfg_path.display(),
         config::config_path()?.display()
     );
-    if let Some(email) = viewer.email.as_deref() {
+    if let Some(email) = email.as_deref() {
         eprintln!("flyx: viewer email: {email}");
     }
-    match viewer.org_slugs.as_slice() {
+    match org_slugs.as_slice() {
         [] => eprintln!(
             "flyx: no orgs probed; bind manually with `flyx x bind {profile_name} <trigger>`"
         ),

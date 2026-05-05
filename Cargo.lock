@@ -218,7 +218,6 @@ dependencies = [
  "tempfile",
  "time",
  "toml",
- "ureq",
 ]
 
 [[package]]

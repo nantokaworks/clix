@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -6,43 +5,27 @@ use serde::Deserialize;
 
 use crate::config::{Profile, ProfilesConfig};
 use crate::error::Error;
-use crate::fly_api;
+use crate::fly_cli;
 
 #[derive(Deserialize)]
 struct FlyConfigYml {
     #[serde(default)]
     access_token: Option<String>,
-    #[serde(default)]
-    wire_guard_state: BTreeMap<String, serde_yml::Value>,
 }
 
-pub(crate) struct FlyConfigSummary {
-    pub access_token: Option<String>,
-    pub wire_guard_orgs: Vec<String>,
-}
-
-/// Reads a `~/.fly/config*.yml` and returns its access_token plus the org
-/// slugs Fly has already cached locally (under `wire_guard_state` keys).
-/// Useful as a fallback when scoped macaroon tokens deny org reads via GraphQL.
-pub(crate) fn read_fly_config_summary(path: &Path) -> Result<FlyConfigSummary, Error> {
+pub(crate) fn read_fly_config_token(path: &Path) -> Result<Option<String>, Error> {
     let content = fs::read_to_string(path).map_err(|e| Error::FlyConfigParse {
         path: path.to_path_buf(),
         msg: e.to_string(),
     })?;
-    let parsed: FlyConfigYml =
-        serde_yml::from_str(&content).map_err(|e| Error::FlyConfigParse {
-            path: path.to_path_buf(),
-            msg: e.to_string(),
-        })?;
-    let access_token = parsed
+    let parsed: FlyConfigYml = serde_yml::from_str(&content).map_err(|e| Error::FlyConfigParse {
+        path: path.to_path_buf(),
+        msg: e.to_string(),
+    })?;
+    Ok(parsed
         .access_token
         .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty());
-    let wire_guard_orgs = parsed.wire_guard_state.into_keys().collect();
-    Ok(FlyConfigSummary {
-        access_token,
-        wire_guard_orgs,
-    })
+        .filter(|t| !t.is_empty()))
 }
 
 pub struct ImportResult {
@@ -56,8 +39,7 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
     let mut skipped_existing = Vec::new();
 
     for path in files {
-        let summary = read_fly_config_summary(&path)?;
-        let token = match summary.access_token {
+        let token = match read_fly_config_token(&path)? {
             Some(t) => t,
             None => continue,
         };
@@ -73,37 +55,17 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
             path.display()
         );
 
-        let mut viewer = match fly_api::fetch_viewer(&token) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!(
-                    "flyx: warning: profile \"{name}\" — could not fetch viewer info ({e}); importing without org details"
-                );
-                fly_api::ViewerInfo {
-                    email: None,
-                    org_slugs: Vec::new(),
-                }
-            }
-        };
-        merge_org_slugs(&mut viewer.org_slugs, &summary.wire_guard_orgs);
+        let (email, org_slugs) = probe_token(&name, &token);
 
-        let primary_org = match viewer.org_slugs.as_slice() {
-            [single] => Some(single.clone()),
-            many if many.is_empty() => None,
-            many => many
-                .iter()
-                .find(|s| s.as_str() == "personal")
-                .cloned()
-                .or_else(|| many.first().cloned()),
-        };
+        let primary_org = pick_primary_for_import(&org_slugs);
 
         cfg.profiles.insert(
             name.clone(),
             Profile {
                 access_token: token,
-                email: viewer.email.clone(),
+                email,
                 org_slug: primary_org.clone(),
-                org_slugs: viewer.org_slugs.clone(),
+                org_slugs: org_slugs.clone(),
             },
         );
 
@@ -112,7 +74,7 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
                 .entry(slug.to_string())
                 .or_insert_with(|| name.clone());
         }
-        for slug in &viewer.org_slugs {
+        for slug in &org_slugs {
             cfg.mappings
                 .entry(slug.clone())
                 .or_insert_with(|| name.clone());
@@ -135,12 +97,41 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
     })
 }
 
-/// In-place dedup-merge: appends slugs from `extra` that aren't already in `into`.
-pub(crate) fn merge_org_slugs(into: &mut Vec<String>, extra: &[String]) {
-    for slug in extra {
-        if !into.iter().any(|s| s == slug) {
-            into.push(slug.clone());
+/// Hits `fly` to fetch email + accessible org slugs for `token`. Failures
+/// degrade to empty results with a warning so import doesn't abort.
+fn probe_token(profile_name: &str, token: &str) -> (Option<String>, Vec<String>) {
+    let email = match fly_cli::auth_whoami(token) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "flyx: warning: profile \"{profile_name}\" — could not fetch viewer info ({e}); importing without email"
+            );
+            None
         }
+    };
+
+    let org_slugs = match fly_cli::orgs_list(token) {
+        Ok(map) => map.into_keys().collect(),
+        Err(e) => {
+            eprintln!(
+                "flyx: warning: profile \"{profile_name}\" — could not list orgs ({e}); importing without org details"
+            );
+            Vec::new()
+        }
+    };
+
+    (email, org_slugs)
+}
+
+fn pick_primary_for_import(slugs: &[String]) -> Option<String> {
+    match slugs {
+        [] => None,
+        [single] => Some(single.clone()),
+        many => many
+            .iter()
+            .find(|s| s.as_str() == "personal")
+            .cloned()
+            .or_else(|| many.first().cloned()),
     }
 }
 

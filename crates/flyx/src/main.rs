@@ -1,7 +1,7 @@
 mod auto_import;
 mod config;
 mod error;
-mod fly_api;
+mod fly_cli;
 mod help;
 mod resolve;
 mod x_cmd;

@@ -1,4 +1,5 @@
 mod args;
+mod auth;
 mod cloudflare_api;
 mod config;
 mod error;
@@ -46,6 +47,9 @@ fn run() -> Result<(), error::Error> {
     }
 
     if let [first, rest @ ..] = parsed.raw.as_slice() {
+        if first == "login" {
+            return auth::login(rest);
+        }
         if first == "x" {
             return x_cmd::run(rest);
         }
@@ -185,8 +189,7 @@ fn is_whoami(args: &[String]) -> bool {
 fn should_passthrough(args: &[String]) -> bool {
     match args {
         [first, ..] if matches!(first.as_str(), "--help" | "-h" | "help") => true,
-        // `login` is passthrough until Phase 2 wires `auth::login`.
-        [first, ..] if matches!(first.as_str(), "login" | "logout") => true,
+        [first, ..] if first == "logout" => true,
         _ => false,
     }
 }
@@ -304,7 +307,6 @@ mod tests {
             vec!["--help".to_string()],
             vec!["-h".to_string()],
             vec!["help".to_string()],
-            vec!["login".to_string()],
             vec!["logout".to_string()],
         ] {
             assert!(should_passthrough(&args));
@@ -312,8 +314,12 @@ mod tests {
     }
 
     #[test]
-    fn intercepts_whoami_and_x() {
-        for args in [vec!["whoami".to_string()], vec!["x".to_string()]] {
+    fn intercepts_whoami_and_x_and_login() {
+        for args in [
+            vec!["whoami".to_string()],
+            vec!["x".to_string()],
+            vec!["login".to_string()],
+        ] {
             assert!(!should_passthrough(&args));
         }
     }

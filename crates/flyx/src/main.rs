@@ -55,8 +55,7 @@ fn run() -> Result<(), error::Error> {
 
     if let [first, second, rest @ ..] = parsed.raw.as_slice() {
         if first == "auth" && (second == "login" || second == "signup") {
-            let (name, extra) = auth::extract_optional_name(rest);
-            return auth::login(second, name, extra);
+            return auth::login(second, rest);
         }
     }
 

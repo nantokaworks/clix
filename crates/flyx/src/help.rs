@@ -18,8 +18,8 @@ pub const EXTRAS_SECTION: &str = "\nflyx extras (wrapper-specific subcommands):\
     \x20 flyx x save-token <name> <token>  register a deploy / org-scoped token directly\n\
     \x20 flyx x whoami [<profile>]         show profile details\n\
     \x20 flyx x --help                     show this list\n\n\
-    \x20 flyx auth login [<name>]          OAuth login + auto-snapshot as profile\n\
-    \x20 flyx auth signup [<name>]         OAuth signup + auto-snapshot as profile\n\
+    \x20 flyx auth login                   OAuth login + auto-snapshot as profile\n\
+    \x20 flyx auth signup                  OAuth signup + auto-snapshot as profile\n\
     \x20 flyx --profile <name> <fly-cmd>   per-invocation profile override\n";
 
 pub fn is_top_level_help(args: &[String]) -> bool {

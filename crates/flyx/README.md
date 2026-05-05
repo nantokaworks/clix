@@ -13,10 +13,11 @@ If you work across personal, work, or client Fly.io organizations, `flyx` lets e
 
 ```bash
 flyx auth login                # OAuth in browser; flyx auto-snapshots the result
-flyx auth login work           # same, saved as profile "work"
 flyx deploy                    # picks the right token based on cwd's fly.toml
 flyx --profile work logs       # one-off override
 ```
+
+The profile name is auto-derived from your Fly email's local-part (e.g. `you@example.com` → `you`). If you don't like it, `flyx x rename` is on the roadmap; for now you can edit `~/.config/flyx/profiles.yml` directly.
 
 ## Routing
 
@@ -36,8 +37,8 @@ The `mappings` cache is populated automatically when you run `flyx auth login`, 
 
 ```bash
 # Login / signup — these REPLACE manual snapshot steps.
-flyx auth login [<name>]              # OAuth + auto-snapshot
-flyx auth signup [<name>]             # signup + auto-snapshot
+flyx auth login                       # OAuth + auto-snapshot (name derived from email)
+flyx auth signup                      # signup + auto-snapshot
 flyx auth logout                      # passthrough; profile store untouched
 
 # Profile management

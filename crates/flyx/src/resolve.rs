@@ -2,6 +2,7 @@ use std::env;
 
 use clix_core::git;
 
+use crate::args::ParsedArgs;
 use crate::auto_import;
 use crate::config::fly_toml::find_project_app;
 use crate::config::{
@@ -9,17 +10,38 @@ use crate::config::{
     trigger_source_label,
 };
 use crate::error::Error;
-use crate::fly_api;
+use crate::fly_cli;
 
-pub fn resolve_trigger() -> Result<(String, TriggerSource), Error> {
+/// Five-layer routing: explicit `-a` flag → fly.toml → explicit `-o` flag →
+/// git remote owner → default. Returns `(trigger_value, source_label)`.
+pub fn resolve_trigger(parsed: &ParsedArgs) -> Result<(String, TriggerSource), Error> {
+    if let Some(app) = parsed.explicit_app.as_deref() {
+        return Ok((app.to_string(), TriggerSource::ExplicitApp));
+    }
+
     if let Some(project) = find_project_app()? {
         return Ok((project.app, TriggerSource::FlyToml(project.path)));
+    }
+
+    if let Some(slug) = parsed.explicit_org.as_deref() {
+        return Ok((slug.to_string(), TriggerSource::ExplicitOrg));
     }
 
     match git::get_remote_owner() {
         Ok(owner) => Ok((owner, TriggerSource::GitRemote)),
         Err(_) => Ok((String::new(), TriggerSource::Default)),
     }
+}
+
+/// Look up `name`'s saved access_token. Used by `--profile <name>` override.
+pub fn lookup_profile_token(name: &str) -> Result<String, Error> {
+    let cfg = config::read_config()?;
+    cfg.profiles
+        .get(name)
+        .map(|p| p.access_token.clone())
+        .ok_or_else(|| Error::ProfileNotFound {
+            profile: name.to_string(),
+        })
 }
 
 pub fn resolve_profile(trigger: &str, source: &TriggerSource) -> Result<ResolvedProfile, Error> {
@@ -53,7 +75,10 @@ pub fn resolve_profile(trigger: &str, source: &TriggerSource) -> Result<Resolved
         });
     }
 
-    if matches!(source, TriggerSource::FlyToml(_)) {
+    if matches!(
+        source,
+        TriggerSource::FlyToml(_) | TriggerSource::ExplicitApp
+    ) {
         if let Some(resolved) = resolve_via_api(&mut cfg, trigger)? {
             config::write_config(&cfg)?;
             return Ok(resolved);
@@ -76,7 +101,7 @@ fn resolve_via_api(cfg: &mut ProfilesConfig, app: &str) -> Result<Option<Resolve
             Some(p) => p.access_token.clone(),
             None => continue,
         };
-        match fly_api::lookup_app_org(&token, app) {
+        match fly_cli::lookup_app(&token, app) {
             Ok(Some(org_slug)) => {
                 if let Some(profile) = cfg.profiles.get_mut(&name) {
                     register_org(profile, &org_slug);
@@ -128,7 +153,7 @@ fn register_org(profile: &mut Profile, org_slug: &str) {
     }
 }
 
-pub fn print_dry_run() -> Result<(), Error> {
+pub fn print_dry_run(parsed: &ParsedArgs) -> Result<(), Error> {
     if let Some((env_name, token)) = fly_env_token() {
         eprintln!("flyx dry-run:");
         eprintln!("  mode: pass-through");
@@ -137,14 +162,23 @@ pub fn print_dry_run() -> Result<(), Error> {
         return Ok(());
     }
 
-    let (trigger, source) = resolve_trigger()?;
+    if let Some(profile_name) = parsed.profile_override.as_deref() {
+        let token = lookup_profile_token(profile_name)?;
+        eprintln!("flyx dry-run:");
+        eprintln!("  profile: {profile_name}");
+        eprintln!("  trigger source: --profile flag");
+        eprintln!("  token (masked): {}", mask_token(&token));
+        return Ok(());
+    }
+
+    let (trigger, source) = resolve_trigger(parsed)?;
     let resolved = resolve_profile(&trigger, &source)?;
     eprintln!("flyx dry-run:");
     eprintln!("  profile: {}", resolved.name);
     eprintln!("  org_slug: {}", resolved.org_slug);
     eprintln!("  trigger source: {}", trigger_source_label(&source));
     if resolved.cached_mapping {
-        eprintln!("  mapping: cached via Fly API lookup");
+        eprintln!("  mapping: cached via fly CLI lookup");
     }
     Ok(())
 }

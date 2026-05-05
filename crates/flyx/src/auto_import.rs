@@ -5,12 +5,28 @@ use serde::Deserialize;
 
 use crate::config::{Profile, ProfilesConfig};
 use crate::error::Error;
-use crate::fly_api;
+use crate::fly_cli;
+use crate::x_token::root_macaroon;
 
 #[derive(Deserialize)]
 struct FlyConfigYml {
     #[serde(default)]
     access_token: Option<String>,
+}
+
+pub(crate) fn read_fly_config_token(path: &Path) -> Result<Option<String>, Error> {
+    let content = fs::read_to_string(path).map_err(|e| Error::FlyConfigParse {
+        path: path.to_path_buf(),
+        msg: e.to_string(),
+    })?;
+    let parsed: FlyConfigYml = serde_yml::from_str(&content).map_err(|e| Error::FlyConfigParse {
+        path: path.to_path_buf(),
+        msg: e.to_string(),
+    })?;
+    Ok(parsed
+        .access_token
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty()))
 }
 
 pub struct ImportResult {
@@ -24,23 +40,8 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
     let mut skipped_existing = Vec::new();
 
     for path in files {
-        let content = fs::read_to_string(&path).map_err(|e| Error::FlyConfigParse {
-            path: path.clone(),
-            msg: e.to_string(),
-        })?;
-        let parsed: FlyConfigYml =
-            serde_yml::from_str(&content).map_err(|e| Error::FlyConfigParse {
-                path: path.clone(),
-                msg: e.to_string(),
-            })?;
-        let token = match parsed.access_token {
-            Some(t) => {
-                let trimmed = t.trim().to_string();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                trimmed
-            }
+        let token = match read_fly_config_token(&path)? {
+            Some(t) => t,
             None => continue,
         };
 
@@ -55,36 +56,17 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
             path.display()
         );
 
-        let viewer = match fly_api::fetch_viewer(&token) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!(
-                    "flyx: warning: profile \"{name}\" — could not fetch viewer info ({e}); importing without org details"
-                );
-                fly_api::ViewerInfo {
-                    email: None,
-                    org_slugs: Vec::new(),
-                }
-            }
-        };
+        let (email, org_slugs) = probe_token(&name, &token);
 
-        let primary_org = match viewer.org_slugs.as_slice() {
-            [single] => Some(single.clone()),
-            many if many.is_empty() => None,
-            many => many
-                .iter()
-                .find(|s| s.as_str() == "personal")
-                .cloned()
-                .or_else(|| many.first().cloned()),
-        };
+        let primary_org = pick_primary_for_import(&org_slugs);
 
         cfg.profiles.insert(
             name.clone(),
             Profile {
                 access_token: token,
-                email: viewer.email.clone(),
+                email,
                 org_slug: primary_org.clone(),
-                org_slugs: viewer.org_slugs.clone(),
+                org_slugs: org_slugs.clone(),
             },
         );
 
@@ -93,7 +75,7 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
                 .entry(slug.to_string())
                 .or_insert_with(|| name.clone());
         }
-        for slug in &viewer.org_slugs {
+        for slug in &org_slugs {
             cfg.mappings
                 .entry(slug.clone())
                 .or_insert_with(|| name.clone());
@@ -116,7 +98,149 @@ pub fn run(cfg: &mut ProfilesConfig) -> Result<ImportResult, Error> {
     })
 }
 
-fn discover_fly_config_files() -> Result<Vec<PathBuf>, Error> {
+/// Hits `fly` to fetch email + accessible org slugs for `token`. Failures
+/// degrade to empty results with a warning so import doesn't abort.
+fn probe_token(profile_name: &str, token: &str) -> (Option<String>, Vec<String>) {
+    let email = match fly_cli::auth_whoami(token) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "flyx: warning: profile \"{profile_name}\" — could not fetch viewer info ({e}); importing without email"
+            );
+            None
+        }
+    };
+
+    let org_slugs = match fly_cli::orgs_list(token) {
+        Ok(map) => map.into_keys().collect(),
+        Err(e) => {
+            eprintln!(
+                "flyx: warning: profile \"{profile_name}\" — could not list orgs ({e}); importing without org details"
+            );
+            Vec::new()
+        }
+    };
+
+    (email, org_slugs)
+}
+
+fn pick_primary_for_import(slugs: &[String]) -> Option<String> {
+    match slugs {
+        [] => None,
+        [single] => Some(single.clone()),
+        many => many
+            .iter()
+            .find(|s| s.as_str() == "personal")
+            .cloned()
+            .or_else(|| many.first().cloned()),
+    }
+}
+
+/// Lazy auto-sync hook for management commands (list / whoami / refresh):
+/// scan `~/.fly/config*.yml`, and for any token whose root macaroon doesn't
+/// match an existing profile, snapshot it as a new profile via fly_cli.
+/// Errors per-file are logged and skipped (this is a best-effort enrichment,
+/// not a failure-worthy operation).
+pub(crate) fn sync_with_fly_dir(cfg: &mut ProfilesConfig) -> Result<(), Error> {
+    let files = discover_fly_config_files()?;
+    let mut dirty = false;
+
+    for path in files {
+        let token = match read_fly_config_token(&path) {
+            Ok(Some(t)) => t,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!("flyx: warning: skipping {}: {e}", path.display());
+                continue;
+            }
+        };
+
+        // Same identity already tracked? Refresh its access_token if the
+        // discharges have rotated, then move on. Without this, an out-of-band
+        // `fly auth login` leaves flyx stuck with a stale snapshot whose
+        // discharges will eventually expire.
+        if let Some(existing_name) = profile_with_matching_root(cfg, &token) {
+            if let Some(existing) = cfg.profiles.get_mut(&existing_name) {
+                if existing.access_token != token {
+                    existing.access_token = token;
+                    eprintln!(
+                        "flyx: refreshed access_token for profile \"{existing_name}\" from {} (rotated discharges)",
+                        path.display()
+                    );
+                    dirty = true;
+                }
+            }
+            continue;
+        }
+
+        let derived = profile_name_from_path(&path);
+        let name = unique_name(cfg, &derived);
+
+        eprintln!(
+            "flyx: discovered untracked config {} → snapshotting as \"{name}\"",
+            path.display()
+        );
+
+        let (email, org_slugs) = probe_token(&name, &token);
+        let primary_org = pick_primary_for_import(&org_slugs);
+
+        cfg.profiles.insert(
+            name.clone(),
+            Profile {
+                access_token: token,
+                email,
+                org_slug: primary_org.clone(),
+                org_slugs: org_slugs.clone(),
+            },
+        );
+
+        if cfg.default.is_none() {
+            cfg.default = Some(name.clone());
+        }
+
+        if let Some(slug) = primary_org.as_deref() {
+            cfg.mappings
+                .entry(slug.to_string())
+                .or_insert_with(|| name.clone());
+        }
+        for slug in &org_slugs {
+            cfg.mappings
+                .entry(slug.clone())
+                .or_insert_with(|| name.clone());
+        }
+
+        dirty = true;
+    }
+
+    if dirty {
+        crate::config::write_config(cfg)?;
+    }
+
+    Ok(())
+}
+
+fn profile_with_matching_root(cfg: &ProfilesConfig, token: &str) -> Option<String> {
+    let target = root_macaroon(token);
+    cfg.profiles
+        .iter()
+        .find(|(_, p)| root_macaroon(&p.access_token) == target)
+        .map(|(name, _)| name.clone())
+}
+
+fn unique_name(cfg: &ProfilesConfig, candidate: &str) -> String {
+    if !cfg.profiles.contains_key(candidate) {
+        return candidate.to_string();
+    }
+    for i in 2.. {
+        let trial = format!("{candidate}-{i}");
+        if !cfg.profiles.contains_key(&trial) {
+            return trial;
+        }
+    }
+    candidate.to_string()
+}
+
+pub(crate) fn discover_fly_config_files() -> Result<Vec<PathBuf>, Error> {
     let home = dirs::home_dir().ok_or(Error::ConfigDirUnavailable)?;
     let fly_dir = home.join(".fly");
     if !fly_dir.is_dir() {
@@ -167,8 +291,37 @@ fn profile_name_from_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::profile_name_from_path;
+    use super::{profile_name_from_path, profile_with_matching_root};
+    use crate::config::{Profile, ProfilesConfig};
     use std::path::PathBuf;
+
+    fn cfg_with(profiles: &[(&str, &str)]) -> ProfilesConfig {
+        let mut cfg = ProfilesConfig::default();
+        for (name, token) in profiles {
+            cfg.profiles.insert(
+                name.to_string(),
+                Profile {
+                    access_token: token.to_string(),
+                    ..Profile::default()
+                },
+            );
+        }
+        cfg
+    }
+
+    #[test]
+    fn matching_root_finds_existing_profile_with_rotated_discharges() {
+        let cfg = cfg_with(&[("ichi", "fm2_aaa,fm2_oldA,fo1_oldB")]);
+        // Same root macaroon, fresh discharges — should match.
+        let hit = profile_with_matching_root(&cfg, "fm2_aaa,fm2_newA,fo1_newB");
+        assert_eq!(hit.as_deref(), Some("ichi"));
+    }
+
+    #[test]
+    fn matching_root_returns_none_when_no_overlap() {
+        let cfg = cfg_with(&[("ichi", "fm2_aaa,fm2_x")]);
+        assert!(profile_with_matching_root(&cfg, "fm2_zzz").is_none());
+    }
 
     #[test]
     fn primary_config_becomes_default() {

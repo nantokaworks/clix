@@ -14,12 +14,10 @@ pub enum Error {
     ProfileNotFound { profile: String },
     NoDefaultProfile,
     UnknownTrigger { trigger: String, known: Vec<String> },
-    UnknownMapping { trigger: String },
     AppNotResolvable { app: String },
-    FlyConfigMissing { searched: Vec<PathBuf> },
     FlyConfigParse { path: PathBuf, msg: String },
     FlyTokenMissing { path: PathBuf },
-    FlyApiError { msg: String },
+    FlyCliError { msg: String },
     InvalidAuthCommand(String),
     FlyNotFound,
     ExecFailed(String),
@@ -46,37 +44,27 @@ impl fmt::Display for Error {
             Error::NoDefaultProfile => write!(
                 f,
                 "no profile could be resolved and no default is set; \
-                 register one with `fly auth login` + `flyx x save <profile>`, \
-                 then optionally `flyx x use <profile>`"
+                 register one with `flyx auth login`, \
+                 then optionally `flyx x use <profile>` to set the fallback"
             ),
             Error::UnknownTrigger { trigger, known } => {
                 write!(
                     f,
                     "no profile mapped to \"{trigger}\"; \
-                     run: `flyx x bind <profile> {trigger}` \
-                     or `flyx x use <profile>` (default fallback)"
+                     pass `flyx --profile <name> ...` for a one-off override \
+                     or `flyx x use <profile>` to change the default"
                 )?;
                 if !known.is_empty() {
                     write!(f, "\n  registered profiles: {}", known.join(", "))?;
                 }
                 Ok(())
             }
-            Error::UnknownMapping { trigger } => write!(
-                f,
-                "no mapping found for \"{trigger}\""
-            ),
             Error::AppNotResolvable { app } => write!(
                 f,
                 "could not resolve which profile owns app \"{app}\"; \
-                 bind manually with `flyx x bind <profile> {app}`"
+                 try `flyx --profile <name> ...` to override per-call, \
+                 or `flyx x refresh` to re-probe known profiles"
             ),
-            Error::FlyConfigMissing { searched } => {
-                write!(f, "fly config file not found; run `fly auth login` first")?;
-                for path in searched {
-                    write!(f, "\n  searched: {}", path.display())?;
-                }
-                Ok(())
-            }
             Error::FlyConfigParse { path, msg } => {
                 write!(f, "failed to parse fly config at {}: {msg}", path.display())
             }
@@ -85,7 +73,7 @@ impl fmt::Display for Error {
                 "no `access_token` found in {}; run `fly auth login` first",
                 path.display()
             ),
-            Error::FlyApiError { msg } => write!(f, "Fly API request failed: {msg}"),
+            Error::FlyCliError { msg } => write!(f, "fly CLI invocation failed: {msg}"),
             Error::InvalidAuthCommand(msg) => write!(f, "{msg}"),
             Error::FlyNotFound => write!(
                 f,

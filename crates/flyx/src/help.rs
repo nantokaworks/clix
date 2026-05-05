@@ -1,25 +1,26 @@
 pub const X_USAGE: &str = "usage: flyx x list\n\
-                           \x20      flyx x bind <profile> <trigger>\n\
-                           \x20      flyx x unbind <trigger>\n\
                            \x20      flyx x use <profile>\n\
-                           \x20      flyx x save <profile>\n\
                            \x20      flyx x remove <profile>\n\
                            \x20      flyx x import\n\
+                           \x20      flyx x refresh [<profile>]\n\
+                           \x20      flyx x save-token <name> <token>\n\
                            \x20      flyx x whoami [<profile>]\n";
 
 pub const BARE_HINT: &str =
-    "\nTip: run `flyx x` for flyx-specific subcommands (profile / mapping management).\n";
+    "\nTip: run `flyx x` for flyx-specific subcommands (profile management).\n";
 
 pub const EXTRAS_SECTION: &str = "\nflyx extras (wrapper-specific subcommands):\n\
-    \x20 flyx x list                       list registered profiles and trigger mappings\n\
-    \x20 flyx x bind <profile> <trigger>   map a trigger (org / app) to a profile\n\
-    \x20 flyx x unbind <trigger>           remove a trigger mapping\n\
+    \x20 flyx x list                       list registered profiles + cached mappings\n\
     \x20 flyx x use <profile>              set the default profile\n\
-    \x20 flyx x save <profile>             snapshot ~/.fly/config.yml into a profile\n\
     \x20 flyx x remove <profile>           delete a profile\n\
-    \x20 flyx x import                     auto-import profiles from ~/.fly/\n\
+    \x20 flyx x import                     scan ~/.fly/config*.yml and snapshot new tokens\n\
+    \x20 flyx x refresh [<profile>]        re-probe orgs / apps via flyctl for saved tokens\n\
+    \x20 flyx x save-token <name> <token>  register a deploy / org-scoped token directly\n\
     \x20 flyx x whoami [<profile>]         show profile details\n\
-    \x20 flyx x --help                     show this list\n";
+    \x20 flyx x --help                     show this list\n\n\
+    \x20 flyx auth login                   OAuth login + auto-snapshot as profile\n\
+    \x20 flyx auth signup                  OAuth signup + auto-snapshot as profile\n\
+    \x20 flyx --profile <name> <fly-cmd>   per-invocation profile override\n";
 
 pub fn is_top_level_help(args: &[String]) -> bool {
     matches!(args, [first] if matches!(first.as_str(), "--help" | "-h" | "help"))

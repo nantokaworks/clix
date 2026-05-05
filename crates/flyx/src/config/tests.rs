@@ -103,6 +103,30 @@ fn pick_via_mapping() {
 }
 
 #[test]
+fn pick_via_explicit_org_slug_match() {
+    let mut cfg = ProfilesConfig::default();
+    cfg.profiles
+        .insert("personal".to_string(), sample_profile());
+
+    let resolved = pick_profile_offline(&cfg, "nantokaworks", &TriggerSource::ExplicitOrg)
+        .unwrap()
+        .unwrap();
+    assert_eq!(resolved.0, "personal");
+    assert_eq!(resolved.1, "personal");
+}
+
+#[test]
+fn pick_returns_none_for_unmapped_explicit_app() {
+    let mut cfg = ProfilesConfig::default();
+    cfg.profiles
+        .insert("personal".to_string(), sample_profile());
+
+    let resolved =
+        pick_profile_offline(&cfg, "unknown-app", &TriggerSource::ExplicitApp).unwrap();
+    assert!(resolved.is_none());
+}
+
+#[test]
 fn pick_via_git_remote_org_slug_match() {
     let mut cfg = ProfilesConfig::default();
     cfg.profiles
@@ -187,6 +211,14 @@ fn trigger_source_labels() {
     assert_eq!(
         trigger_source_label(&TriggerSource::FlyToml("a.toml".into())),
         "fly.toml:a.toml"
+    );
+    assert_eq!(
+        trigger_source_label(&TriggerSource::ExplicitApp),
+        "--app flag"
+    );
+    assert_eq!(
+        trigger_source_label(&TriggerSource::ExplicitOrg),
+        "--org flag"
     );
     assert_eq!(
         trigger_source_label(&TriggerSource::GitRemote),

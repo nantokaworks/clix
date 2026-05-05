@@ -31,8 +31,15 @@ pub struct Profile {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriggerSource {
+    /// Explicit `-a <name>` / `--app <name>` flag.
+    ExplicitApp,
+    /// Top-level `app` field of the nearest fly.toml.
     FlyToml(PathBuf),
+    /// Explicit `-o <slug>` / `--org <slug>` flag.
+    ExplicitOrg,
+    /// Owner inferred from `git remote get-url origin`.
     GitRemote,
+    /// No trigger could be derived; fall back to default profile.
     Default,
 }
 
@@ -113,7 +120,7 @@ pub fn pick_profile_offline(
         }
     }
 
-    if matches!(source, TriggerSource::GitRemote) {
+    if matches!(source, TriggerSource::ExplicitOrg | TriggerSource::GitRemote) {
         if let Some((name, profile)) = config.profiles.iter().find(|(_, p)| {
             p.org_slugs.iter().any(|s| s == trigger) || p.org_slug.as_deref() == Some(trigger)
         }) {
@@ -169,7 +176,9 @@ pub fn primary_org(
 
 pub fn trigger_source_label(source: &TriggerSource) -> String {
     match source {
+        TriggerSource::ExplicitApp => "--app flag".to_string(),
         TriggerSource::FlyToml(path) => format!("fly.toml:{}", path.display()),
+        TriggerSource::ExplicitOrg => "--org flag".to_string(),
         TriggerSource::GitRemote => "git remote".to_string(),
         TriggerSource::Default => "default profile".to_string(),
     }

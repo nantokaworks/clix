@@ -34,6 +34,7 @@ pub struct Profile {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriggerSource {
+    ExplicitAccountId,
     WranglerToml(PathBuf),
     WranglerJsonc(PathBuf),
     GitRemote,
@@ -139,7 +140,7 @@ pub fn resolve_profile(
     })
 }
 
-fn pick_profile(
+pub(crate) fn pick_profile(
     config: &ProfilesConfig,
     trigger: &str,
     source: &TriggerSource,
@@ -239,12 +240,15 @@ fn ensure_fresh(config: &mut ProfilesConfig, profile_name: &str) -> Result<bool,
 pub fn is_account_id_source(source: &TriggerSource) -> bool {
     matches!(
         source,
-        TriggerSource::WranglerToml(_) | TriggerSource::WranglerJsonc(_)
+        TriggerSource::ExplicitAccountId
+            | TriggerSource::WranglerToml(_)
+            | TriggerSource::WranglerJsonc(_)
     )
 }
 
 pub fn trigger_source_label(source: &TriggerSource) -> String {
     match source {
+        TriggerSource::ExplicitAccountId => "--account-id flag".to_string(),
         TriggerSource::WranglerToml(path) => format!("wrangler.toml:{}", path.display()),
         TriggerSource::WranglerJsonc(path) => format!("wrangler.jsonc:{}", path.display()),
         TriggerSource::GitRemote => "git remote".to_string(),

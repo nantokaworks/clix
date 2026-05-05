@@ -1,8 +1,13 @@
+mod args;
 mod cloudflare_api;
 mod config;
 mod error;
 mod help;
 mod oauth;
+mod resolve;
+#[cfg(test)]
+mod test_support;
+mod wrangler_cli;
 mod x_cmd;
 
 use std::env;
@@ -10,54 +15,75 @@ use std::process::{self, Command};
 
 use clix_core::banner;
 use clix_core::exec::{self, ExecError, exec_replace};
-use clix_core::git;
 use clix_core::update;
 use colored::Colorize;
 
-use config::wrangler_toml::{ProjectConfigKind, find_project_account_id};
-use config::{TriggerSource, trigger_source_label};
+use config::trigger_source_label;
 
 fn run() -> Result<(), error::Error> {
-    let args: Vec<String> = env::args().skip(1).collect();
-    let mut cmd = Command::new("wrangler");
-    cmd.args(&args);
+    let raw: Vec<String> = env::args().skip(1).collect();
 
-    if is_version_command(&args) {
+    if is_version_command(&raw) {
         return print_wranglerx_banner();
     }
 
-    if args.is_empty() {
+    let parsed = args::parse(&raw);
+    let mut cmd = Command::new("wrangler");
+    cmd.args(&parsed.raw);
+
+    if parsed.raw.is_empty() {
         print_wranglerx_banner()?;
         exec::write_or_exit_on_pipe_close(help::BARE_HINT);
         return run_wrangler(cmd);
     }
 
-    if help::is_top_level_help(&args) {
+    if help::is_top_level_help(&parsed.raw) {
         return run_wrangler_with_extras(cmd);
     }
 
-    if should_passthrough(&args) {
+    if should_passthrough(&parsed.raw) {
         return run_wrangler(cmd);
     }
 
-    if let [first, rest @ ..] = args.as_slice() {
+    if let [first, rest @ ..] = parsed.raw.as_slice() {
         if first == "x" {
             return x_cmd::run(rest);
         }
     }
 
-    if is_dry_run(&args) {
-        return print_dry_run();
+    if is_whoami(&parsed.raw) {
+        return run_whoami(&parsed);
     }
 
-    if env::var_os("CLOUDFLARE_ACCOUNT_ID").is_some() {
+    if is_dry_run(&parsed.raw) {
+        return resolve::print_dry_run(&parsed);
+    }
+
+    // Layer 7: explicit token in env — user signaled "don't manage this for me".
+    if resolve::has_cloudflare_env_token() {
         return run_wrangler(cmd);
     }
 
-    let (trigger, source) = resolve_trigger()?;
-    let profile = config::resolve_profile(&trigger, &source)?;
-    cmd.env("CLOUDFLARE_API_TOKEN", &profile.access_token);
-    cmd.env("CLOUDFLARE_ACCOUNT_ID", &profile.account_id);
+    // Layer 8: --profile <name> — inject just the access_token. Account_id is
+    // left to wrangler.toml / CLOUDFLARE_ACCOUNT_ID env / wrangler defaults.
+    if let Some(profile_name) = parsed.profile_override.as_deref() {
+        let token = resolve::lookup_profile_token(profile_name)?;
+        cmd.env("CLOUDFLARE_API_TOKEN", token);
+        return run_wrangler(cmd);
+    }
+
+    // Backward-compat: bare CLOUDFLARE_ACCOUNT_ID env (without --account-id flag
+    // or --profile) means the user is managing creds themselves outside
+    // wranglerx. Pass through verbatim.
+    if env::var_os("CLOUDFLARE_ACCOUNT_ID").is_some() && parsed.account_id_override.is_none() {
+        return run_wrangler(cmd);
+    }
+
+    // Layer 9 (default): 5-layer routing inside resolve_trigger.
+    let (trigger, source) = resolve::resolve_trigger(&parsed)?;
+    let resolved = resolve::resolve_profile(&trigger, &source)?;
+    cmd.env("CLOUDFLARE_API_TOKEN", &resolved.access_token);
+    cmd.env("CLOUDFLARE_ACCOUNT_ID", &resolved.account_id);
 
     run_wrangler(cmd)
 }
@@ -77,39 +103,25 @@ fn map_exec_err(e: ExecError) -> error::Error {
     }
 }
 
-fn resolve_trigger() -> Result<(String, TriggerSource), error::Error> {
-    if let Some(project) = find_project_account_id()? {
-        let source = match project.kind {
-            ProjectConfigKind::Toml => TriggerSource::WranglerToml(project.path),
-            ProjectConfigKind::Jsonc => TriggerSource::WranglerJsonc(project.path),
-        };
-        return Ok((project.account_id, source));
-    }
+fn run_whoami(parsed: &args::ParsedArgs) -> Result<(), error::Error> {
+    // Resolve the token the same way an ordinary command would, so `wranglerx
+    // whoami` answers "who am I according to *this* routing context?".
+    let token = if resolve::has_cloudflare_env_token() {
+        None
+    } else if let Some(name) = parsed.profile_override.as_deref() {
+        Some(resolve::lookup_profile_token(name)?)
+    } else if env::var_os("CLOUDFLARE_ACCOUNT_ID").is_some()
+        && parsed.account_id_override.is_none()
+    {
+        None
+    } else {
+        let (trigger, source) = resolve::resolve_trigger(parsed)?;
+        let resolved = resolve::resolve_profile(&trigger, &source)?;
+        Some(resolved.access_token)
+    };
 
-    match git::get_remote_owner() {
-        Ok(owner) => Ok((owner, TriggerSource::GitRemote)),
-        Err(_) => Ok((String::new(), TriggerSource::Default)),
-    }
-}
-
-fn print_dry_run() -> Result<(), error::Error> {
-    if let Ok(account_id) = env::var("CLOUDFLARE_ACCOUNT_ID") {
-        eprintln!("wranglerx dry-run:");
-        eprintln!("  mode: pass-through");
-        eprintln!("  trigger source: env:CLOUDFLARE_ACCOUNT_ID");
-        eprintln!("  account_id: {account_id}");
-        return Ok(());
-    }
-
-    let (trigger, source) = resolve_trigger()?;
-    let profile = config::resolve_profile(&trigger, &source)?;
-    eprintln!("wranglerx dry-run:");
-    eprintln!("  profile: {}", profile.name);
-    eprintln!("  account_id: {}", profile.account_id);
-    eprintln!("  trigger source: {}", trigger_source_label(&source));
-    if profile.refreshed {
-        eprintln!("  oauth: refreshed");
-    }
+    let out = wrangler_cli::whoami(token.as_deref())?;
+    wrangler_cli::print_whoami(&out);
     Ok(())
 }
 
@@ -121,9 +133,14 @@ fn is_dry_run(args: &[String]) -> bool {
     matches!(args, [first, ..] if first == "--dry-run")
 }
 
+fn is_whoami(args: &[String]) -> bool {
+    matches!(args, [first] if first == "whoami")
+}
+
 fn should_passthrough(args: &[String]) -> bool {
     match args {
         [first, ..] if matches!(first.as_str(), "--help" | "-h" | "help") => true,
+        // `login` is passthrough until Phase 2 wires `auth::login`.
         [first, ..] if matches!(first.as_str(), "login" | "logout") => true,
         _ => false,
     }
@@ -140,13 +157,19 @@ fn print_wranglerx_banner() -> Result<(), error::Error> {
     ];
 
     let mut context_lines: Vec<String> = Vec::new();
-    if let Ok(account_id) = env::var("CLOUDFLARE_ACCOUNT_ID") {
+    if let Some((env_name, _)) = resolve::cloudflare_env_token() {
+        context_lines.push(format!(
+            "{} {}",
+            format!("{env_name}:").dimmed(),
+            "(env override)".yellow()
+        ));
+    } else if let Ok(account_id) = env::var("CLOUDFLARE_ACCOUNT_ID") {
         context_lines.push(format!(
             "{} {}",
             "account_id:".dimmed(),
             account_id.yellow()
         ));
-    } else if let Ok((trigger, source)) = resolve_trigger() {
+    } else if let Ok((trigger, source)) = resolve::resolve_trigger(&args::ParsedArgs::default()) {
         let trigger_label = if trigger.is_empty() {
             "(default)".to_string()
         } else {
@@ -198,7 +221,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_dry_run, is_version_command, should_passthrough};
+    use super::{is_dry_run, is_version_command, is_whoami, should_passthrough};
 
     #[test]
     fn detects_version_paths() {
@@ -215,6 +238,16 @@ mod tests {
     fn detects_dry_run() {
         assert!(is_dry_run(&["--dry-run".to_string()]));
         assert!(!is_dry_run(&["deploy".to_string()]));
+    }
+
+    #[test]
+    fn detects_whoami() {
+        assert!(is_whoami(&["whoami".to_string()]));
+        assert!(!is_whoami(&[
+            "whoami".to_string(),
+            "--help".to_string()
+        ]));
+        assert!(!is_whoami(&["deploy".to_string()]));
     }
 
     #[test]
@@ -236,5 +269,4 @@ mod tests {
             assert!(!should_passthrough(&args));
         }
     }
-
 }

@@ -207,7 +207,7 @@ dependencies = [
 
 [[package]]
 name = "flyx"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clix-core",
  "colored",
@@ -261,7 +261,7 @@ dependencies = [
 
 [[package]]
 name = "ghx"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "atty",
  "clix-core",
@@ -1275,7 +1275,7 @@ dependencies = [
 
 [[package]]
 name = "wranglerx"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clix-core",
  "colored",

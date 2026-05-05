@@ -1,10 +1,14 @@
+mod args;
+mod auth;
 mod auto_import;
 mod config;
 mod error;
-mod fly_api;
+mod fly_cli;
 mod help;
 mod resolve;
 mod x_cmd;
+mod x_refresh;
+mod x_token;
 
 use std::env;
 use std::process::{self, Command};
@@ -16,46 +20,60 @@ use colored::Colorize;
 
 use config::trigger_source_label;
 
-const FLY_AUTH_PASSTHROUGH: &[&str] = &["login", "logout", "signup"];
+const FLY_AUTH_PASSTHROUGH: &[&str] = &["logout"];
 
 fn run() -> Result<(), error::Error> {
-    let args: Vec<String> = env::args().skip(1).collect();
-    let mut cmd = Command::new("fly");
-    cmd.args(&args);
+    let raw: Vec<String> = env::args().skip(1).collect();
 
-    if is_version_command(&args) {
+    if is_version_command(&raw) {
         return print_flyx_banner();
     }
 
-    if args.is_empty() {
+    let parsed = args::parse(&raw);
+    let mut cmd = Command::new("fly");
+    cmd.args(&parsed.raw);
+
+    if parsed.raw.is_empty() {
         print_flyx_banner()?;
         exec::write_or_exit_on_pipe_close(help::BARE_HINT);
         return run_fly(cmd);
     }
 
-    if help::is_top_level_help(&args) {
+    if help::is_top_level_help(&parsed.raw) {
         return run_fly_with_extras(cmd);
     }
 
-    if should_passthrough(&args) {
+    if should_passthrough(&parsed.raw) {
         return run_fly(cmd);
     }
 
-    if let [first, rest @ ..] = args.as_slice() {
+    if let [first, rest @ ..] = parsed.raw.as_slice() {
         if first == "x" {
             return x_cmd::run(rest);
         }
     }
 
-    if is_dry_run(&args) {
-        return resolve::print_dry_run();
+    if let [first, second, rest @ ..] = parsed.raw.as_slice() {
+        if first == "auth" && (second == "login" || second == "signup") {
+            return auth::login(second, rest);
+        }
+    }
+
+    if is_dry_run(&parsed.raw) {
+        return resolve::print_dry_run(&parsed);
     }
 
     if resolve::has_fly_env_token() {
         return run_fly(cmd);
     }
 
-    let (trigger, source) = resolve::resolve_trigger()?;
+    if let Some(profile_name) = parsed.profile_override.as_deref() {
+        let token = resolve::lookup_profile_token(profile_name)?;
+        cmd.env("FLY_API_TOKEN", token);
+        return run_fly(cmd);
+    }
+
+    let (trigger, source) = resolve::resolve_trigger(&parsed)?;
     let resolved = resolve::resolve_profile(&trigger, &source)?;
     cmd.env("FLY_API_TOKEN", &resolved.access_token);
 
@@ -114,7 +132,7 @@ fn print_flyx_banner() -> Result<(), error::Error> {
             format!("{env_name}:").dimmed(),
             "(env override)".yellow()
         ));
-    } else if let Ok((trigger, source)) = resolve::resolve_trigger() {
+    } else if let Ok((trigger, source)) = resolve::resolve_trigger(&args::ParsedArgs::default()) {
         let trigger_label = if trigger.is_empty() {
             "(default)".to_string()
         } else {
@@ -191,11 +209,20 @@ mod tests {
             vec!["--help".to_string()],
             vec!["-h".to_string()],
             vec!["help".to_string()],
-            vec!["auth".to_string(), "login".to_string()],
             vec!["auth".to_string(), "logout".to_string()],
-            vec!["auth".to_string(), "signup".to_string()],
         ] {
             assert!(should_passthrough(&args), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn auth_login_and_signup_do_not_passthrough() {
+        // login / signup are intercepted by auth::login for auto-snapshot.
+        for args in [
+            vec!["auth".to_string(), "login".to_string()],
+            vec!["auth".to_string(), "signup".to_string()],
+        ] {
+            assert!(!should_passthrough(&args), "{args:?}");
         }
     }
 

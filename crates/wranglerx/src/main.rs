@@ -52,7 +52,7 @@ fn run() -> Result<(), error::Error> {
     }
 
     if is_whoami(&parsed.raw) {
-        return run_whoami(&parsed);
+        return run_whoami(&parsed, cmd);
     }
 
     if is_dry_run(&parsed.raw) {
@@ -117,7 +117,10 @@ fn map_exec_err(e: ExecError) -> error::Error {
     }
 }
 
-fn run_whoami(parsed: &args::ParsedArgs) -> Result<(), error::Error> {
+fn run_whoami(
+    parsed: &args::ParsedArgs,
+    mut fallback_cmd: Command,
+) -> Result<(), error::Error> {
     // Resolve the token the same way an ordinary command would, so `wranglerx
     // whoami` answers "who am I according to *this* routing context?".
     let token = if resolve::has_cloudflare_env_token() {
@@ -134,9 +137,37 @@ fn run_whoami(parsed: &args::ParsedArgs) -> Result<(), error::Error> {
         Some(resolved.access_token)
     };
 
-    let out = wrangler_cli::whoami(token.as_deref())?;
-    wrangler_cli::print_whoami(&out);
-    Ok(())
+    match wrangler_cli::whoami(token.as_deref()) {
+        Ok(out) => {
+            wrangler_cli::print_whoami(&out);
+            Ok(())
+        }
+        // Older wrangler (≤ 4.64.x) does not know `--json` for `whoami` and
+        // exits with `Unknown argument: json`. Fall back to plain
+        // `wrangler whoami` so the command still works.
+        Err(e) if is_unknown_json_arg(&e) => {
+            eprintln!(
+                "wranglerx: this wrangler doesn't support `whoami --json`; falling back to plain `wrangler whoami`"
+            );
+            if let Some(t) = token.as_deref() {
+                fallback_cmd.env("CLOUDFLARE_API_TOKEN", t);
+            }
+            run_wrangler(fallback_cmd)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Detect the older-wrangler "I don't know `--json`" error so we can fall
+/// back to a plain `wrangler whoami` passthrough. Wrangler ≤ 4.64.x prints
+/// `Unknown argument: json` (without the leading dashes) in stderr.
+fn is_unknown_json_arg(err: &error::Error) -> bool {
+    if let error::Error::WranglerCliError { msg } = err {
+        let low = msg.to_lowercase();
+        low.contains("unknown argument") && low.contains("json")
+    } else {
+        false
+    }
 }
 
 fn is_version_command(args: &[String]) -> bool {
@@ -235,7 +266,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_dry_run, is_version_command, is_whoami, should_passthrough};
+    use super::{
+        is_dry_run, is_unknown_json_arg, is_version_command, is_whoami, should_passthrough,
+    };
+    use crate::error::Error;
 
     #[test]
     fn detects_version_paths() {
@@ -282,5 +316,33 @@ mod tests {
         for args in [vec!["whoami".to_string()], vec!["x".to_string()]] {
             assert!(!should_passthrough(&args));
         }
+    }
+
+    #[test]
+    fn detects_unknown_json_arg_error() {
+        // The exact stderr from wrangler 4.64 et al.
+        let err = Error::WranglerCliError {
+            msg: "wrangler whoami --json failed: Unknown argument: json".to_string(),
+        };
+        assert!(is_unknown_json_arg(&err));
+    }
+
+    #[test]
+    fn unknown_json_arg_is_case_insensitive() {
+        let err = Error::WranglerCliError {
+            msg: "Wrangler exited 1: UNKNOWN ARGUMENT: --JSON".to_string(),
+        };
+        assert!(is_unknown_json_arg(&err));
+    }
+
+    #[test]
+    fn other_wrangler_errors_do_not_trigger_fallback() {
+        let err = Error::WranglerCliError {
+            msg: "wrangler whoami --json failed: not authenticated".to_string(),
+        };
+        assert!(!is_unknown_json_arg(&err));
+
+        let err = Error::WranglerNotFound;
+        assert!(!is_unknown_json_arg(&err));
     }
 }

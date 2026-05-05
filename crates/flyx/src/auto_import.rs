@@ -143,7 +143,7 @@ fn pick_primary_for_import(slugs: &[String]) -> Option<String> {
 /// not a failure-worthy operation).
 pub(crate) fn sync_with_fly_dir(cfg: &mut ProfilesConfig) -> Result<(), Error> {
     let files = discover_fly_config_files()?;
-    let mut imported = Vec::new();
+    let mut dirty = false;
 
     for path in files {
         let token = match read_fly_config_token(&path) {
@@ -155,7 +155,21 @@ pub(crate) fn sync_with_fly_dir(cfg: &mut ProfilesConfig) -> Result<(), Error> {
             }
         };
 
-        if profile_with_root_exists(cfg, &token) {
+        // Same identity already tracked? Refresh its access_token if the
+        // discharges have rotated, then move on. Without this, an out-of-band
+        // `fly auth login` leaves flyx stuck with a stale snapshot whose
+        // discharges will eventually expire.
+        if let Some(existing_name) = profile_with_matching_root(cfg, &token) {
+            if let Some(existing) = cfg.profiles.get_mut(&existing_name) {
+                if existing.access_token != token {
+                    existing.access_token = token;
+                    eprintln!(
+                        "flyx: refreshed access_token for profile \"{existing_name}\" from {} (rotated discharges)",
+                        path.display()
+                    );
+                    dirty = true;
+                }
+            }
             continue;
         }
 
@@ -195,21 +209,22 @@ pub(crate) fn sync_with_fly_dir(cfg: &mut ProfilesConfig) -> Result<(), Error> {
                 .or_insert_with(|| name.clone());
         }
 
-        imported.push(name);
+        dirty = true;
     }
 
-    if !imported.is_empty() {
+    if dirty {
         crate::config::write_config(cfg)?;
     }
 
     Ok(())
 }
 
-fn profile_with_root_exists(cfg: &ProfilesConfig, token: &str) -> bool {
+fn profile_with_matching_root(cfg: &ProfilesConfig, token: &str) -> Option<String> {
     let target = root_macaroon(token);
     cfg.profiles
-        .values()
-        .any(|p| root_macaroon(&p.access_token) == target)
+        .iter()
+        .find(|(_, p)| root_macaroon(&p.access_token) == target)
+        .map(|(name, _)| name.clone())
 }
 
 fn unique_name(cfg: &ProfilesConfig, candidate: &str) -> String {
@@ -276,8 +291,37 @@ fn profile_name_from_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::profile_name_from_path;
+    use super::{profile_name_from_path, profile_with_matching_root};
+    use crate::config::{Profile, ProfilesConfig};
     use std::path::PathBuf;
+
+    fn cfg_with(profiles: &[(&str, &str)]) -> ProfilesConfig {
+        let mut cfg = ProfilesConfig::default();
+        for (name, token) in profiles {
+            cfg.profiles.insert(
+                name.to_string(),
+                Profile {
+                    access_token: token.to_string(),
+                    ..Profile::default()
+                },
+            );
+        }
+        cfg
+    }
+
+    #[test]
+    fn matching_root_finds_existing_profile_with_rotated_discharges() {
+        let cfg = cfg_with(&[("ichi", "fm2_aaa,fm2_oldA,fo1_oldB")]);
+        // Same root macaroon, fresh discharges — should match.
+        let hit = profile_with_matching_root(&cfg, "fm2_aaa,fm2_newA,fo1_newB");
+        assert_eq!(hit.as_deref(), Some("ichi"));
+    }
+
+    #[test]
+    fn matching_root_returns_none_when_no_overlap() {
+        let cfg = cfg_with(&[("ichi", "fm2_aaa,fm2_x")]);
+        assert!(profile_with_matching_root(&cfg, "fm2_zzz").is_none());
+    }
 
     #[test]
     fn primary_config_becomes_default() {
